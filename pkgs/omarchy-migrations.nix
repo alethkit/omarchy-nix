@@ -48,6 +48,18 @@
   "1785543725.sh" = "user-safe"; # WhatsApp Slim ext in *-flags.conf ($HOME only)
   "1785608166.sh" = "user-safe"; # omarchy-sleep-lock drop-in in ~/.config/systemd/user + systemctl --user
   "1785633225.sh" = "user-safe"; # foot.ini scrollback multiplier ($HOME only)
+  # v4.0.0 wave:
+  "1785591762.sh" = "user-safe"; # WhatsApp Slim ext in brave-origin flags ($HOME only)
+  "1786098807.sh" = "user-safe"; # relink agent skill symlinks to default/agents/skills/
+  #                           # (HM manages the same links; ln -sfn is idempotent and
+  #                           # refreshes pre-HM installs)
+  "1786099804.sh" = "user-safe"; # rename model-usage bar widget -> agents via jq ($HOME)
+  "1786279107.sh" = "user-safe"; # add keyboard-layout widget to bar layout (omarchy-bar put)
+  "1786451567.sh" = "user-safe"; # repair theme symlinks (literal ~ targets, $HOME)
+  "1786517850.sh" = "user-safe"; # drop retired notification image cache ($HOME)
+  "1786549201.sh" = "user-safe"; # install the pick-a-default-agent invitation hook ($HOME)
+  "1786643346.sh" = "user-safe"; # Copy URL shortcut re-registration (Chromium profile, $HOME)
+  "1786782461.sh" = "user-safe"; # remove literal \n[text-bindings] line in foot.ini ($HOME)
 
   # ------------------------------------------------------------------- skip
   "1778623107.sh" = "skip"; # mpv-mpris via omarchy-pkg-add (pacman)
@@ -95,4 +107,25 @@
   #                           # omacalc and dropped gnome-calculator)
   "1785846769.sh" = "skip"; # agent mise wrappers (mise model rejected — agents install via the
   #                           # nix catalog: Menu > Install > AI)
+  # v4.0.0 wave:
+  "1785944594.sh" = "skip"; # T2 Mac suspend/fan defaults: limine + t2fand /etc writes (Arch boot)
+  "1786137597.sh" = "skip"; # re-runs 1785944594 (same Arch-boot target)
+  "1786181929.sh" = "skip"; # PAM env PATH for SSH commands (/etc/pam.d; NixOS owns PAM)
+  "1786273938.sh" = "skip"; # herdr install via omarchy-pkg-add + repo (declarative: module ships
+  #                           # pkgs/herdr.nix via appPackages)
+  "1786278735.sh" = "skip"; # /etc/ssh/ssh_config.d keepalive (declarative: programs.ssh, below)
+  "1786355450.sh" = "skip"; # ttfx swap via omarchy-pkg-add (declarative: appPackages)
+  "1786380259.sh" = "skip"; # /etc/bluetooth/main.conf AutoEnable + rfkill machine-wide state
+  #                           # (declarative: hardware.bluetooth + systemd-rfkill)
+  "1786386460.sh" = "skip"; # libvips via omarchy-pkg-add (declarative: module ships vips)
+  "1786391100.sh" = "skip"; # brcmfmac WPA supplicant quirk (Arch install-time fixup)
+  "1786447584.sh" = "skip"; # zbar via omarchy-pkg-add (declarative: module ships zbar)
+  "1786482992.sh" = "skip"; # Limine kernel-cmdline boot image rebuild (Arch boot)
+  "1786539345.sh" = "skip"; # crash-watch setup — the user unit is shipped + enabled natively
+  #                           # (modules/nixos default.nix block H); no runtime setup needed
+  "1786567036.sh" = "skip"; # unmask wpa_supplicant (iwd-era carryover; NixOS ships NM + supplicant)
+  "1786605598.sh" = "skip"; # initramfs rebuild for NVIDIA nouveau firmware (mkinitcpio)
+  "1786952219.sh" = "skip"; # mise -> mise-bin repo swap (mise model rejected — catalog is final)
+  "1786183928.sh" = "skip"; # regenerate mise tool wrappers (mise model rejected — catalog is final;
+  #                           # omarchy-refresh-applications itself stays user-safe)
 }

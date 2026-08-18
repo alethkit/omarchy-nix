@@ -133,6 +133,32 @@
       class = "declarative-note";
       note = "Input-emulation daemons are declarative: programs.ydotool.enable = true in your flake config.";
     };
+    # v4.0.0 renames + new ISO/factory-reset surface (renamed from
+    # omarchy-setup-* / introduced by the deferred-provisioning work):
+    omarchy-apply-system = {
+      class = "declarative-note";
+      note = "System setup is the NixOS module: omarchy.enable = true declares the packages, services and /etc equivalents the ISO installer writes by hand.";
+    };
+    omarchy-apply-hardware = {
+      class = "declarative-note";
+      note = "Hardware setup is declarative: import a nixos-hardware NixOSModule or set hardware.* options in your flake config (the module already declares the defaults the ISO writes).";
+    };
+    omarchy-provision-owner = {
+      class = "declarative-note";
+      note = "Deferred first-boot provisioning is ISO-installer machinery (LUKS re-key, user creation, /etc writes); on NixOS users are declared with users.users.<name> in the flake.";
+    };
+    omarchy-system-factory-reset = {
+      class = "declarative-note";
+      note = "Factory reset is btrfs/@factory + limine ISO machinery with no NixOS analogue; roll back with nixos-rebuild switch --rollback or a boot-menu generation.";
+    };
+    omarchy-system-factory-reset-finish = {
+      class = "declarative-note";
+      note = "Factory reset is btrfs/@factory + limine ISO machinery with no NixOS analogue; roll back with nixos-rebuild switch --rollback or a boot-menu generation.";
+    };
+    omarchy-update-pkg-prune = {
+      class = "declarative-note";
+      note = "There is no pacman package cache on NixOS: old generations are garbage-collected with nix-collect-garbage -d (or nix.settings.auto-optimise-store / gc.options in your flake).";
+    };
 
     # --- nixos-adapted: hand-rewritten in pkgs/omarchy.nix postPatch --------
     # (system mutations removed; user-state flows kept)
@@ -164,6 +190,12 @@
       class = "nixos-adapted";
     };
     omarchy-update-firmware = {
+      class = "nixos-adapted";
+    };
+    # omarchy-install-ai-chatgpt: the pkg-add core already routes into the
+    # declarative stub; only the /usr/bin/chatgpt launch path is adapted
+    # (binaries live on PATH on NixOS).
+    omarchy-install-ai-chatgpt = {
       class = "nixos-adapted";
     };
     omarchy-install-dev-env = {
@@ -238,6 +270,33 @@
       # touched; timesyncd itself runs declaratively on NixOS.
       allow = [ "systemctl-restart" ];
     };
+    # v4.0.0: persist the Bluetooth adapter power state via an rfkill soft
+    # block (the state systemd-rfkill restores from /var/lib/systemd-rfkill
+    # at boot) instead of forcing the adapter off every time. Transient
+    # device state, no persistent system config is touched.
+    omarchy-bluetooth-power = {
+      class = "user-safe";
+      allow = [ "rfkill" ];
+    };
+    # v4.0.0 restart helpers: transient rfkill unblock (+ nmcli radio/scan
+    # for wifi, both runtime device state). No persistent config touched.
+    omarchy-restart-bluetooth = {
+      class = "user-safe";
+      allow = [ "rfkill" ];
+    };
+    omarchy-restart-wifi = {
+      class = "user-safe";
+      allow = [
+        "rfkill"
+        "nmcli-radio"
+      ];
+    };
+    # v4.0.0: crash-capture on/off — a user toggle file plus starting/stopping
+    # the per-user omarchy-crash-watch unit (user scope only).
+    omarchy-toggle-crash-capture = {
+      class = "user-safe";
+      allow = [ "systemctl-user" ];
+    };
   };
 
   # Menu entries deleted from default/omarchy/omarchy-menu.jsonc at package
@@ -258,6 +317,10 @@
     "install.browser.brave-origin"
     "remove.browser.zen"
     "remove.browser.brave-origin"
+    # v4.0.0 Setup > Reset Computer: btrfs @factory snapshot + limine ISO
+    # machinery (omarchy-system-factory-reset is a declarative-note stub);
+    # NixOS rolls back via boot generations.
+    "setup.reset"
     # Setup > Network > DNS: omarchy-dns writes /etc/NetworkManager and
     # /etc/systemd/resolved.conf imperatively (stubbed declarative-note);
     # DNS on NixOS is services.resolved / networking.nameservers.

@@ -71,12 +71,13 @@ let
   '';
 
   # Bash parity gap filler: Quattro's bash profile gained
-  # `alias a='omarchy-launch-agent --inline'` (default coding agent) after
-  # the pinned fork rev. Port-level supplement until the fork picks it up —
-  # drop this file when the pin advances past the fix.
+  # `alias a='omarchy-agent --inline'` (default coding agent; renamed from
+  # omarchy-launch-agent in v4.0.0) after the pinned fork rev. Port-level
+  # supplement until the fork picks it up — drop this file when the pin
+  # advances past the fix.
   agentAliasFn = writeText "a.fish" ''
-    function a --wraps omarchy-launch-agent --description 'Launch the default coding agent inline'
-        omarchy-launch-agent --inline $argv
+    function a --wraps omarchy-agent --description 'Launch the default coding agent inline'
+        omarchy-agent --inline $argv
     end
   '';
 in

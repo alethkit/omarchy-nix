@@ -133,6 +133,12 @@
           hyprland-preview-share-picker = pkgs.callPackage ./pkgs/hyprland-preview-share-picker.nix { };
           omarchy-nvim = pkgs.callPackage ./pkgs/omarchy-nvim.nix { };
           omarchy-fish = pkgs.callPackage ./pkgs/omarchy-fish.nix { };
+          # ttfx: screensaver engine (Rust TTE port; replaced
+          # python-terminaltexteffects upstream in v4.0.0). herdr: terminal
+          # workspace manager for coding agents (v4.0.0, ships alongside
+          # tmux; not in nixpkgs).
+          ttfx = pkgs.callPackage ./pkgs/ttfx.nix { };
+          herdr = pkgs.callPackage ./pkgs/herdr.nix { };
           # Icons for stock Omarchy themes (nixpkgs dropped yaru-theme with murrine).
           yaru-theme = pkgs.callPackage ./pkgs/yaru-theme.nix { };
           default = self.packages.${system}.omarchy;
@@ -198,6 +204,9 @@
                     omarchy-nvim
                     # Yaru-* icons: not pkgs.yaru-theme (throw-alias on new nixpkgs).
                     yaru-theme
+                    # v4.0.0 upstream-owned binaries.
+                    herdr
+                    ttfx
                   ]
                 );
                 omarchy.nvimPackage = lib.mkDefault hostPackages.omarchy-nvim;
@@ -269,8 +278,10 @@
           omarchy-skill =
             let
               sourceSkill = ./skills/omarchy/SKILL.md;
-              packagedSkill = "${self.packages.${system}.omarchy}/share/omarchy/default/omarchy-skill/SKILL.md";
-              upstreamSkill = "${inputs.omarchy-src}/default/omarchy-skill/SKILL.md";
+              packagedSkill = "${
+                self.packages.${system}.omarchy
+              }/share/omarchy/default/agents/skills/omarchy/SKILL.md";
+              upstreamSkill = "${inputs.omarchy-src}/default/agents/skills/omarchy/SKILL.md";
               parityManifest = ./skills/omarchy/skill-parity.json;
             in
             pkgs.runCommand "omarchy-skill-check" { nativeBuildInputs = [ pkgs.jq ]; } ''
@@ -1095,6 +1106,10 @@
               pat[usr-lib]='/usr/lib/(systemd|modules)'
               pat[initrd-boot]='\b(mkinitcpio|limine-mkinitcpio|limine-update|limine-snapper-sync|plymouth-set-default-theme|grub-mkconfig|update-grub|efibootmgr|bootctl)\b'
               pat[modprobe]='\b(modprobe|insmod|rmmod)\b'
+              # transient rfkill device state (soft block/unblock)
+              pat[rfkill]='\brfkill[[:space:]]+(block|unblock)\b'
+              # NetworkManager runtime radio/network state (no profile writes)
+              pat[nmcli-radio]='\bnmcli[[:space:]]+(radio|networking|device[[:space:]]+wifi[[:space:]]+rescan)\b'
               pat[kernel-ctl]='\bsysctl[[:space:]]+(-w|--write|-p[[:space:]])'
               pat[account-tools]='\b(usermod|useradd|userdel|groupadd|groupdel|gpasswd|chsh|visudo|chpasswd)\b'
               pat[ctl-set]='\b(timedatectl|hostnamectl|localectl)[[:space:]]+set-'
@@ -1666,7 +1681,12 @@ kitty";
 B";
                   }).omarchy.full_name
                 )
-                (assertNeg "email-cr" (omEval { email_address = "a@bc"; }).omarchy.email_address)
+                (assertNeg "email-cr"
+                  (omEval {
+                    email_address = "a@b
+c";
+                  }).omarchy.email_address
+                )
                 (assertNeg "monitor-empty-output" (fmt.parseMonitor ", 1920x1080"))
                 (assertNeg "monitor-6-fields" (fmt.parseMonitor "DP-1, preferred, auto, 1, 0, extra"))
                 (assertNeg "monitor-bad-scale" (fmt.parseMonitor "DP-1, preferred, auto, abc"))
@@ -1968,7 +1988,24 @@ B";
               #     fish itself has no builtin ".." — upstream fish-profile
               #     gap, not a port deviation. Remove from this list if
               #     omarchy-fish ever adds ...fish (the ".." function file).
-              expectedMissing = [ ".." ];
+              # v4.0.0 bash additions not yet in the pinned omarchy-fish
+              # fork: herdr helpers (h, hdl, hdlm, hds, hsl, _herdr_ratio,
+              # _herdr_split) and the ssh wrapper set (_ssh_disarm,
+              # _ssh_interactive, ssh) — drop entries as the fork picks
+              # them up (same rule as the "a" alias).
+              expectedMissing = [
+                ".."
+                "h"
+                "hdl"
+                "hdlm"
+                "hds"
+                "hsl"
+                "_herdr_ratio"
+                "_herdr_split"
+                "_ssh_disarm"
+                "_ssh_interactive"
+                "ssh"
+              ];
             in
             pkgs.runCommand "omarchy-fish-parity-check" { } ''
               set -euo pipefail

@@ -107,7 +107,7 @@ in
       effMonitors = (osConfig.omarchy or cfg).monitors;
       effTheme = (osConfig.omarchy or cfg).theme;
       effNvimPkg = (osConfig.omarchy or cfg).nvimPackage or null;
-      effSkill = "${omarchyPathOf effPkg}/default/omarchy-skill";
+      effSkill = "${omarchyPathOf effPkg}/default/agents/skills/omarchy";
     in
     lib.mkIf cfg.enable (
       lib.mkIf (effPkg != null) {
@@ -332,9 +332,9 @@ in
 
         # --- Class 4: first-run skip markers (invitation-only) ---
 
-        # default/hypr/autostart.lua runs omarchy-first-run on every login.
-        # install/ is vendored (see pkgs/omarchy.nix), so first-run and
-        # finalize-user run for real. Do NOT pre-create first-run-user /
+        # default/hypr/autostart.lua runs omarchy-provision-first-run on every
+        # login. install/ is vendored (see pkgs/omarchy.nix), so first-run and
+        # provision-user run for real. Do NOT pre-create first-run-user /
         # finalize-user — those are the top-level completion markers
         # upstream writes only after a successful run.
         #
@@ -357,9 +357,9 @@ in
           done
         '';
 
-        # --- Class 5: default browser (upstream finalize-user parity) ---
+        # --- Class 5: default browser (upstream provision-user parity) ---
 
-        # bin/omarchy-finalize-user:105 runs
+        # bin/omarchy-provision-user runs
         #   env -u BROWSER xdg-settings set default-web-browser chromium.desktop
         # env -u BROWSER is required: xdg-settings refuses to write the
         # association when BROWSER is set (treats it as a higher-priority

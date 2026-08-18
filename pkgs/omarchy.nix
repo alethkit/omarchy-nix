@@ -10,7 +10,7 @@
 # /usr/share/omarchy. Every other consumer (62 bin scripts, the Lua Hyprland
 # bootstrap, etc.) reads OMARCHY_PATH from the environment, which the NixOS
 # module (Stage 3) sets as a session variable. Hardcoded /usr/share/omarchy
-# references in operational scripts (omarchy-finalize-user, omarchy-upgrade-*,
+# references in operational scripts (omarchy-provision-user, omarchy-upgrade-*,
 # omarchy-dev-link) are intentionally NOT patched: those are Arch/pacman
 # lifecycle scripts that have no NixOS analogue and would require translation,
 # which is explicitly out of scope (AGENTS.md: "vendor, don't rewrite").
@@ -25,8 +25,8 @@
 #     first-run-user + invitation markers); without a no-op they abort
 #     finalize-user under set -e before keyring/xdg steps. mise is Arch
 #     packaging (/opt/packages tarballs) and out of scope for this port.
-#   - install/ + applications/ are vendored so omarchy-first-run /
-#     omarchy-finalize-user / omarchy-refresh-applications resolve
+#   - install/ + applications/ are vendored so omarchy-provision-first-run /
+#     omarchy-provision-user / omarchy-refresh-applications resolve
 #     $OMARCHY_PATH/install and $OMARCHY_PATH/applications (OMARCHY_INSTALL
 #     defaults to $OMARCHY_PATH/install).
 #   - store→$HOME copies in bin/ and install/user/hardware/asus/: add
@@ -110,16 +110,21 @@ stdenv.mkDerivation (finalAttrs: {
         substituteInPlace bin/omarchy-file-select \
           --replace-fail '#!/usr/bin/python3' '#!${pythonWithGi}/bin/python3'
 
-        # model-usage plugin: the QML providers exec a bare `python3` (dead
-        # on a minimal session PATH) and the scanner scripts carry an
-        # env-python shebang. Point both at the store interpreter (the
-        # scanners are stdlib-only, no pygobject needed).
-        substituteInPlace shell/plugins/model-usage/providers/Claude.qml \
-          --replace-fail '"python3", root.projectScannerScriptPath' '"${python3}/bin/python3", root.projectScannerScriptPath'
-        substituteInPlace shell/plugins/model-usage/providers/Codex.qml \
-          --replace-fail '"python3", root.scannerPath' '"${python3}/bin/python3", root.scannerPath'
-        substituteInPlace shell/plugins/model-usage/scripts/claude_usage_scanner.py \
-          --replace-fail '#!/usr/bin/env python3' '#!${python3}/bin/python3'
+        # Python bin scripts with a hardcoded /usr/bin/python3 shebang (dead
+        # on NixOS). omarchy-file-select needs pygobject3 (gi.repository
+        # Gio/GLib) — the pythonWithGi interpreter plus the GI_TYPELIB_PATH
+        # wrap in postFixup. The four agent-usage/dev-font scanners are
+        # stdlib-only and get the plain store interpreter. (Quattro v4.0.0
+        # replaced the old shell/plugins/model-usage QML providers, which
+        # exec'd a bare `python3`, with these standalone bin scripts.)
+        substituteInPlace bin/omarchy-agent-usage-claude \
+          --replace-fail '#!/usr/bin/python3' '#!${python3}/bin/python3'
+        substituteInPlace bin/omarchy-agent-usage-codex \
+          --replace-fail '#!/usr/bin/python3' '#!${python3}/bin/python3'
+        substituteInPlace bin/omarchy-agent-usage-fireworks \
+          --replace-fail '#!/usr/bin/python3' '#!${python3}/bin/python3'
+        substituteInPlace bin/omarchy-dev-font \
+          --replace-fail '#!/usr/bin/python3' '#!${python3}/bin/python3'
 
         # --- systemd user units: binary + omarchy path adaptation only ---
         # bt-agent lives in bluez-tools on nixpkgs (not bluez).
@@ -129,6 +134,13 @@ stdenv.mkDerivation (finalAttrs: {
 
         substituteInPlace default/systemd/user/omarchy-fcitx5.service \
           --replace-fail "/usr/bin/fcitx5" "${fcitx5}/bin/fcitx5"
+
+        # crash-watch: the journal-fed coredump watcher behind the crash
+        # toast + agent diagnosis (Quattro v4.0.0). Runs journalctl via
+        # systemctl-style absolute paths on Arch.
+        substituteInPlace default/systemd/user/omarchy-crash-watch.service \
+          --replace-fail "/usr/bin/omarchy-crash-watch" \
+            "$out/share/omarchy/bin/omarchy-crash-watch"
 
         substituteInPlace default/systemd/user/omarchy-migrate-notify.service \
           --replace-fail "ConditionPathIsDirectory=/usr/share/omarchy/migrations" \
@@ -237,21 +249,22 @@ stdenv.mkDerivation (finalAttrs: {
           --replace-fail 'cp "$OMARCHY_PATH/icon.txt"' \
                          'cp --no-preserve=mode "$OMARCHY_PATH/icon.txt"'
 
-        # nixpkgs wraps tte with makeWrapper, so the process comm is
-        # ".tte-wrapped" and `pgrep/pkill -x tte` never match. The
-        # screensaver's inner wait loop then exits instantly and the outer
-        # while-true respawns tte in a tight loop (~300MB RSS each) until
-        # the kernel OOM-kills the whole session. Tolerate both the bare
-        # and the wrapped comm name (ERE, anchored by -x). Keep the pattern
-        # <=15 chars: without -f, pgrep/pkill warn "pattern ... longer than
-        # 15 characters" on EVERY call — and this pgrep runs once per second
-        # in the wait loop, so the warnings pile up in the terminal buffer
-        # behind the tte canvas and flash at every effect change.
+        # nixpkgs wraps ttfx (the Rust tte port, v4.0.0) with makeWrapper,
+        # so the process comm is ".ttfx-wrapped" and `pgrep/pkill -x ttfx`
+        # never match. The screensaver's inner wait loop then exits
+        # instantly and the outer while-true respawns ttfx in a tight loop
+        # (~300MB RSS each) until the kernel OOM-kills the whole session.
+        # Tolerate both the bare and the wrapped comm name (ERE, anchored
+        # by -x). Keep the pattern <=15 chars: without -f, pgrep/pkill warn
+        # "pattern ... longer than 15 characters" on EVERY call — and this
+        # pgrep runs once per second in the wait loop, so the warnings pile
+        # up in the terminal buffer behind the ttfx canvas and flash at
+        # every effect change.
         substituteInPlace bin/omarchy-screensaver \
-          --replace-fail 'pgrep -t "''${tty#/dev/}" -x tte' \
-                         'pgrep -t "''${tty#/dev/}" -x "\.?tte.*"' \
-          --replace-fail 'pkill -x tte' \
-                         'pkill -x "\.?tte.*"'
+          --replace-fail 'pgrep -t "''${tty#/dev/}" -x ttfx' \
+                         'pgrep -t "''${tty#/dev/}" -x "\.?ttfx.*"' \
+          --replace-fail 'pkill -x ttfx' \
+                         'pkill -x "\.?ttfx.*"'
 
         # Same wrapper class of bug as tte above: nixpkgs wraps
         # gpu-screen-recorder, so the recorded process cmdline is the full
@@ -437,10 +450,11 @@ stdenv.mkDerivation (finalAttrs: {
         chmod +x bin/omarchy-pkg-aur-accessible
 
         # Lock/fingerprint PAM writers: upstream writes /etc/pam.d/*
-        # imperatively; on NixOS those services are declared in the module
-        # (blocks K/L), so runtime writes are both wrong and impossible.
+        # imperatively (omarchy-apply-lock since v4.0.0, renamed from
+        # omarchy-setup-lock); on NixOS those services are declared in the
+        # module (blocks K/L), so runtime writes are both wrong and impossible.
         for s in \
-          bin/omarchy-setup-lock \
+          bin/omarchy-apply-lock \
           bin/omarchy-setup-security-fingerprint \
           bin/omarchy-remove-security-fingerprint
         do
@@ -486,6 +500,12 @@ stdenv.mkDerivation (finalAttrs: {
 
         # nixos-adapted (hand rewrites — user-state flows kept, system
         # mutations removed):
+
+        # omarchy-install-ai-chatgpt: the pkg-add core is already a
+        # declarative stub; only the hardcoded /usr/bin/chatgpt launch path
+        # is dead on NixOS (binaries live on PATH).
+        substituteInPlace bin/omarchy-install-ai-chatgpt \
+          --replace-fail 'uwsm-app -- /usr/bin/chatgpt' 'uwsm-app -- chatgpt'
 
         # omarchy-setup-security-sshd: the daemon + firewall are declarative
         # (services.openssh.enable opens port 22 on NixOS); the useful
@@ -1277,16 +1297,19 @@ stdenv.mkDerivation (finalAttrs: {
 
         # Menu rewiring: cataloged entries call omarchy-nix-add /
         # omarchy-nix-remove. Action-part-only substitutions (glyph-free), so
-        # upstream `when:` guards and icons stay untouched. Development entries
-        # additionally replace their mise-dir guards with pkg-present probes.
-        # NordVPN and ONCE lines are deleted outright (same rule as
-        # install.aur): ONCE is AUR-only, and NordVPN's nixpkgs package +
-        # services.nordvpn module landed only in the 26.11 cycle — re-add as
-        # a catalog feature once our stable pin catches up. The OPR move
-        # (fd1034f, label lost "[AUR]") does not change that: upstream still
-        # installs the same nordvpn-bin package and enables nordvpnd by hand,
-        # while our NixOS analogue (catalog feature, services.nordvpn) needs
-        # the module that our pinned nixpkgs lacks.
+        # upstream `disabled:` guards and icons stay untouched (v4.0.0 moved
+        # the install-side guards from `when: ! omarchy-pkg-present X` to
+        # `disabled: omarchy-pkg-present X` — exactly our model — so no guard
+        # rewrites are needed for services/browsers/AI anymore; the mise-dir
+        # `disabled:` guards upstream keeps for dev stacks still get the
+        # pkg-present probe treatment below). NordVPN and ONCE lines are
+        # deleted outright (same rule as install.aur): ONCE is AUR-only, and
+        # NordVPN's nixpkgs package + services.nordvpn module landed only in
+        # the 26.11 cycle — re-add as a catalog feature once our stable pin
+        # catches up (upstream still installs the same nordvpn-bin package
+        # and enables nordvpnd by hand, while our NixOS analogue, catalog
+        # feature + services.nordvpn, needs the module our pinned nixpkgs
+        # lacks).
         substituteInPlace default/omarchy/omarchy-menu.jsonc \
           --replace-fail "'omarchy-install-browser chrome'" "'omarchy-nix-add install.browser.chrome'" \
           --replace-fail "'omarchy-install-browser edge'" "'omarchy-nix-add install.browser.edge'" \
@@ -1297,8 +1320,8 @@ stdenv.mkDerivation (finalAttrs: {
           --replace-fail "omarchy-launch-floating-terminal-with-presentation omarchy-install-service-spotify" "omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.service.spotify'" \
           --replace-fail "omarchy-launch-floating-terminal-with-presentation omarchy-install-service-signal" "omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.service.signal'" \
           --replace-fail "omarchy-launch-floating-terminal-with-presentation omarchy-install-service-tailscale" "omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.service.tailscale'" \
-          --replace-fail '  "install.service.nordvpn": {"icon":"󱇱","label":"NordVPN","when":"! omarchy-pkg-present nordvpn-bin","action":"omarchy-launch-floating-terminal-with-presentation omarchy-install-service-nordvpn"},' "" \
-          --replace-fail '  "install.service.once": {"icon":"󰏖","label":"ONCE","when":"! omarchy-pkg-present once-bin","action":"omarchy-launch-floating-terminal-with-presentation omarchy-install-service-once"},' "" \
+          --replace-fail '  "install.service.nordvpn": {"icon":"󱇱","label":"NordVPN","disabled":"omarchy-pkg-present nordvpn-bin","action":"omarchy-launch-floating-terminal-with-presentation omarchy-install-service-nordvpn"},' "" \
+          --replace-fail '  "install.service.once": {"icon":"󰏖","label":"ONCE","disabled":"omarchy-pkg-present once-bin","action":"omarchy-launch-floating-terminal-with-presentation omarchy-install-service-once"},' "" \
           --replace-fail "omarchy-install-and-launch Bitwarden 'bitwarden bitwarden-cli' bitwarden" "omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.service.bitwarden'" \
           --replace-fail "omarchy-launch-floating-terminal-with-presentation omarchy-install-editor-vscode" "omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.editor.vscode'" \
           --replace-fail "omarchy-install-and-launch Cursor cursor-bin cursor" "omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.editor.cursor'" \
@@ -1368,22 +1391,10 @@ stdenv.mkDerivation (finalAttrs: {
 
         # Development entries: replace mise-dir / rustup / opam guards with
         # pkg-present probes (php's guard is already pkg-present upstream).
-        # Install side uses the negated form; remove side uses the positive form.
+        # v4.0.0: install side uses `disabled:` with the same mise-dir
+        # expressions; remove side keeps `when:` — one literal covers both
+        # sides, so the old negated install-side substitutions are gone.
         substituteInPlace default/omarchy/omarchy-menu.jsonc \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/ruby ]]' '! omarchy-pkg-present ruby' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/go ]]' '! omarchy-pkg-present go' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/python ]]' '! omarchy-pkg-present python' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/zig ]]' '! omarchy-pkg-present zig' \
-          --replace-fail '[[ ! -d $HOME/.rustup ]]' '! omarchy-pkg-present rust' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/java ]]' '! omarchy-pkg-present java' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/dotnet ]]' '! omarchy-pkg-present dotnet' \
-          --replace-fail '[[ ! -d $HOME/.opam ]]' '! omarchy-pkg-present ocaml' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/clojure ]]' '! omarchy-pkg-present clojure' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/scala ]]' '! omarchy-pkg-present scala' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/node ]]' '! omarchy-pkg-present node' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/bun ]]' '! omarchy-pkg-present bun' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/deno ]]' '! omarchy-pkg-present deno' \
-          --replace-fail '[[ ! -d $HOME/.local/share/mise/installs/elixir ]]' '! omarchy-pkg-present elixir' \
           --replace-fail '[[ -d $HOME/.local/share/mise/installs/ruby ]]' 'omarchy-pkg-present ruby' \
           --replace-fail '[[ -d $HOME/.local/share/mise/installs/go ]]' 'omarchy-pkg-present go' \
           --replace-fail '[[ -d $HOME/.local/share/mise/installs/python ]]' 'omarchy-pkg-present python' \
@@ -1463,7 +1474,7 @@ stdenv.mkDerivation (finalAttrs: {
     # Mirror the directories pacman's `omarchy` package ships under
     # /usr/share/omarchy. `cp -a` preserves modes (so the executable bit on
     # bin/omarchy-* survives) and timestamps for reproducibility.
-    # install/ is required by omarchy-first-run / omarchy-finalize-user
+    # install/ is required by omarchy-provision-first-run / omarchy-provision-user
     # (OMARCHY_INSTALL=$OMARCHY_PATH/install). applications/ is required by
     # omarchy-refresh-applications (copies *.desktop into
     # ~/.local/share/applications). Arch-only installer trees under install/
@@ -1478,13 +1489,14 @@ stdenv.mkDerivation (finalAttrs: {
 
     # B21: the upstream skill is Arch-specific (/usr/share/omarchy,
     # pacman/AUR, Arch package lifecycle). Replace it with the omarchy-nix
-    # end-user skill at package build time. Upstream finalize-user still owns
-    # the installation mechanism and links this exact directory into each
-    # supported agent; keeping the replacement inside $OMARCHY_PATH also
-    # means an upstream refresh cannot reinstall the incompatible variant.
-    rm -rf "$dest/default/omarchy-skill"
+    # end-user skill at package build time. Upstream provision-user still owns
+    # the installation mechanism and links every skill directory under
+    # default/agents/skills/ into each supported agent; keeping the
+    # replacement inside $OMARCHY_PATH also means an upstream refresh cannot
+    # reinstall the incompatible variant.
+    rm -rf "$dest/default/agents/skills/omarchy"
     install -Dm644 ${../skills/omarchy/SKILL.md} \
-      "$dest/default/omarchy-skill/SKILL.md"
+      "$dest/default/agents/skills/omarchy/SKILL.md"
 
     # Top-level runtime assets referenced by relative paths from within the
     # copied tree (e.g. default/chromium/extensions/copy-url/icon.png symlinks

@@ -34,8 +34,9 @@ autostart, and systemd command — `bash -c` interiors and QML exec sites
 are guarded by count tripwires), and `checks.omarchy-fish` (vendor
 profile parity).
 
-> The Quattro desktop is still alpha upstream (version `4.0.0.alpha`).
-> Expect rough edges. Not for production.
+> Upstream released Quattro as `v4.0.0` (2026-08-14); this port tracks the
+> `quattro` branch (release + post-release fixes). The vendored `version`
+> file still reads `4.0.0.alpha` — upstream does not bump it at release time.
 
 ### Known VM limitation (not a port bug)
 

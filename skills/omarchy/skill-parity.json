@@ -1,9 +1,13 @@
 {
-  "comment": "Semantic parity manifest for the NixOS omarchy skill. Every h2-h4 (##+) heading and every Command Groups table row in the upstream default/omarchy-skill/SKILL.md must appear here, classified as preserved (carried over verbatim in intent), adapted (rewritten for NixOS), or omitted (intentionally excluded, reason required). checks.omarchy-skill fails when upstream adds a section or command group that is not classified here, or when this manifest classifies something upstream removed. An optional 'anchor' string is grepped in our SKILL.md to prove the classified content is actually present.",
+  "comment": "Semantic parity manifest for the NixOS omarchy skill. Every h2-h4 (##+) heading and every Command Groups table row in the upstream default/agents/skills/omarchy/SKILL.md must appear here, classified as preserved (carried over verbatim in intent), adapted (rewritten for NixOS), or omitted (intentionally excluded, reason required). checks.omarchy-skill fails when upstream adds a section or command group that is not classified here, or when this manifest classifies something upstream removed. An optional 'anchor' string is grepped in our SKILL.md to prove the classified content is actually present. (v4.0.0: upstream split the deep guidance into sibling topic guides and folded Common Tasks/Patterns into the new section layout.)",
   "sections": {
     "When This Skill MUST Be Used": {
       "status": "adapted",
       "note": "Trigger list lives in the frontmatter description (what agents actually match on) plus the intro; paths rewritten to the NixOS port. A redundant MUST section duplicates the frontmatter and drifts."
+    },
+    "Topic Guides": {
+      "status": "omitted",
+      "reason": "v4.0.0 moved the deep guidance (hyprland/plugins/theming/hooks/capture/contributing) into sibling .md files that are NOT shipped by omarchy-nix — our skill keeps the equivalent NixOS-adapted guidance inline, and contributing.md is upstream-repo workflow that does not apply to the port."
     },
     "Critical Safety Rules": {
       "status": "adapted",
@@ -11,11 +15,12 @@
     },
     "Privilege Escalation": {
       "status": "adapted",
-      "note": "Same policy (sudo in a visible terminal, pkexec only for non-interactive callers) with NixOS specifics: sudo via /run/wrappers, omarchy scripts already handle their own elevation."
+      "note": "Same policy (sudo in a visible terminal, pkexec only for non-interactive callers) with NixOS specifics: sudo via /run/wrappers, omarchy scripts already handle their own elevation.",
+      "anchor": "/run/wrappers/bin/sudo"
     },
     "System Architecture": {
       "status": "adapted",
-      "note": "Component table kept, base-OS row describes NixOS + the consumer flake instead of Arch /etc ownership."
+      "note": "Component table kept, base-OS row describes NixOS + the consumer flake instead of Arch /etc ownership; menu/launcher row points at the extensions jsonc."
     },
     "Command Discovery": {
       "status": "adapted",
@@ -27,15 +32,7 @@
     },
     "Configuration Locations": {
       "status": "adapted",
-      "note": "Hyprland/shell/terminals carried over; adds the Other Configs table (btop, fastfetch, lazygit, starship, git) with the NixOS caveat that no system fastfetch default is installed."
-    },
-    "Hyprland (Window Manager)": {
-      "status": "adapted",
-      "note": "Same file map and the reload/configerrors validation loop; reset path is omarchy refresh hyprland."
-    },
-    "Omarchy shell (Status Bar + Notifications)": {
-      "status": "adapted",
-      "note": "Single-Quickshell architecture, shell.json hot-reload, plugin clone workflow — all platform-independent; paths kept."
+      "note": "Hyprland/shell/terminals carried over; keeps the Other Configs table (btop, fastfetch, lazygit, starship, git) with the NixOS caveat that no system fastfetch default is installed."
     },
     "Terminals": {
       "status": "preserved",
@@ -48,56 +45,19 @@
     },
     "Safe Customization Patterns": {
       "status": "adapted",
-      "note": "The four patterns are folded into 'Common Workflows' (backup, narrowest reset with confirmation, hooks, new-theme flow)."
+      "note": "The backup/read/edit/apply loop and the reset-with-confirmation rule are folded into 'Common Workflows' (backup, narrowest reset with confirmation, hooks, new-theme flow)."
     },
-    "Pattern 1: Edit User Config Directly": {
+    "Edit User Config Directly": {
       "status": "adapted",
       "note": "Same read-backup-edit-apply loop; the apply step lists the NixOS-relevant reload/restart commands per component."
     },
-    "Pattern 2: Make a new theme": {
-      "status": "adapted",
-      "note": "Custom theme under ~/.config/omarchy/themes copied from $OMARCHY_PATH/themes stock; never edit the store copy."
-    },
-    "Pattern 3: Use Hooks for Automation": {
-      "status": "preserved",
-      "note": "Same .d hook directories and omarchy hook install; pre-refresh-pacman.d noted as never firing on NixOS.",
-      "anchor": "omarchy hook install"
-    },
-    "Pattern 4: Reset to Defaults -- ALWAYS SEEK USER CONFIRMATION BEFORE RUNNING": {
+    "Reset to Defaults -- ALWAYS SEEK USER CONFIRMATION BEFORE RUNNING": {
       "status": "adapted",
       "note": "Same confirmation-first rule; narrowest reset via omarchy refresh; the upstream nuclear option (omarchy reinstall) only chains stubs on NixOS and the re-seed workflow replaces it."
     },
-    "Common Tasks": {
+    "System Commands": {
       "status": "adapted",
-      "note": "Themes/keybindings/monitors/window-rules carried over; adds the Fonts and System tasks upstream lists; system power commands marked user-safe."
-    },
-    "Themes": {
-      "status": "adapted",
-      "note": "theme list/current/set/bg next are platform-independent and kept; theme install <git-url> documented (writes under ~/.config/omarchy/themes, user-safe); adds the custom-theme-from-stock workflow and the never-edit-the-store-copy rule.",
-      "anchor": "omarchy theme install"
-    },
-    "Keybindings": {
-      "status": "preserved",
-      "note": "Same o.bind/hl.unbind workflow including the rebind notification rule.",
-      "anchor": "hl.unbind"
-    },
-    "Display/Monitors": {
-      "status": "preserved",
-      "note": "Same hl.monitor({}) editing plus hyprctl monitors all.",
-      "anchor": "hl.monitor"
-    },
-    "Window Rules": {
-      "status": "adapted",
-      "note": "Same warning about syntax churn and the o.window() helper; doc check pointed at the installed Hyprland version rather than a blind wiki fetch."
-    },
-    "Fonts": {
-      "status": "preserved",
-      "note": "omarchy font list/current/set are user-safe on NixOS (write user config, fire the font-set hook).",
-      "anchor": "omarchy font set"
-    },
-    "System": {
-      "status": "adapted",
-      "note": "update/version/debug kept; lock/shutdown/reboot documented as user-safe wrappers with the agent-session caution."
+      "note": "v4.0.0 section replacing Common Tasks' system rows: update/version/debug kept; lock/shutdown/reboot documented as user-safe wrappers with the agent-session caution; theme/font flows keep their own anchors below."
     },
     "Troubleshooting": {
       "status": "adapted",
@@ -118,7 +78,8 @@
     },
     "Example Requests": {
       "status": "adapted",
-      "note": "Example set kept where NixOS-safe; package examples rewritten to the omarchy-nix workflow."
+      "note": "Example set kept where NixOS-safe; package examples rewritten to the omarchy-nix workflow.",
+      "anchor": "nix-add"
     }
   },
   "commandGroups": {
@@ -168,7 +129,7 @@
     },
     "capture": {
       "status": "preserved",
-      "note": "Screenshots/recordings write to ~/Pictures and ~/Videos.",
+      "note": "Screenshots/recordings write to ~/Pictures and ~/Videos; v4.0.0 adds QR capture (zbar).",
       "anchor": "omarchy capture --help"
     },
     "reminder": {

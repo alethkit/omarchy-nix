@@ -270,7 +270,7 @@ let
         })
         ydotool
 
-        # --- Default browser (upstream parity). bin/omarchy-finalize-user
+        # --- Default browser (upstream parity). bin/omarchy-provision-user
         # runs `xdg-settings set default-web-browser chromium.desktop`; the
         # HM module mirrors that. exclude_packages still works. ---
         chromium
@@ -318,12 +318,18 @@ let
         # quattro 14f1bb6c) shells out to `iw dev <device> link`.
         iw
         # qrencode: omarchy-network-qr renders the Wi-Fi QR matrix (Setup >
-        # Network > QR Code). ddcutil: omarchy-brightness-display-ddc drives
-        # external monitor brightness over DDC/CI (needs hardware.i2c, below).
+        # Network > QR Code); zbar: omarchy-capture-qr decodes a selected
+        # region back to the clipboard (v4.0.0 Trigger > Capture > QR Code).
+        # ddcutil: omarchy-brightness-display-ddc drives external monitor
+        # brightness over DDC/CI (needs hardware.i2c, below).
         qrencode
+        zbar
         ddcutil
         plocate
         libnotify
+        # libvips (nixpkgs attr `vips`): omarchy-image-picker thumbnails
+        # (v4.0.0; upstream package name libvips).
+        vips
         # fwupdmgr for omarchy-update-firmware (service enabled in parity block).
         fwupd
 
@@ -399,7 +405,8 @@ let
         mariadb-connector-c
         python3Packages.pygobject3
         python3Packages.poetry-core
-        python3Packages.terminaltexteffects
+        # ttfx + herdr: v4.0.0 upstream-owned binaries — flake packages
+        # (pkgs/ttfx.nix, pkgs/herdr.nix) injected via omarchy.appPackages.
 
         # --- Upstream parity: dev toolchains ---
         # (rust removed upstream from base packages: "We don't need rust any
@@ -538,7 +545,11 @@ in
         # PATH (same effect as mkBefore), so omarchy's own omarchy-X wins over
         # any same-named system binary.
         #
-        # BROWSER/TERMINAL mirror default/uwsm/default (upstream session env).
+        # TERMINAL mirrors default/uwsm/default (upstream session env).
+        # BROWSER is deliberately NOT session-wide since upstream v4.0.0:
+        # exporting it makes xdg-settings refuse to change the default
+        # browser (breaking the browsers' own "Set as default" buttons);
+        # interactive shells get it from default/bash/envs instead.
         # GSETTINGS_SCHEMA_DIR: see gsettingsSchemaDir above — first-run
         # gnome-theme.sh / gtk-primary-paste.sh call unwrapped gsettings.
         #
@@ -555,7 +566,6 @@ in
           # omarchy.package instead if a different tree is needed.
           OMARCHY_PATH = "${cfg.package}/share/omarchy";
           PATH = [ "${cfg.package}/share/omarchy/bin" ];
-          BROWSER = lib.mkDefault "omarchy-launch-browser";
           TERMINAL = lib.mkDefault "xdg-terminal-exec";
           # EDITOR/SUDO_EDITOR mirror default/bash/envs
           # (EDITOR="${EDITOR:-omarchy-launch-editor --inline}",
@@ -584,7 +594,7 @@ in
         };
 
         # Login-shell route for OMARCHY_USER_NAME/EMAIL (feeds
-        # install/user/git.sh + xcompose.sh via omarchy-finalize-user; the
+        # install/user/git.sh + xcompose.sh via omarchy-provision-user; the
         # upstream ISO sets them from the installer). /etc/profile parses
         # shell syntax, so a literal @ in the address is safe here.
         environment.extraInit = ''
@@ -611,8 +621,10 @@ in
         # uwsm does not source /etc/profile.d; it scans uwsm/env.d/* under the
         # XDG config hierarchy (/etc/xdg on NixOS). Drop a fragment there so
         # the Hyprland session launched via uwsm sees OMARCHY_PATH + the bin
-        # scripts on PATH too. OMARCHY_PATH/BROWSER/TERMINAL mirror
-        # environment.sessionVariables above; OMARCHY_USER_NAME/EMAIL repeat
+        # scripts on PATH too. OMARCHY_PATH/TERMINAL mirror
+        # environment.sessionVariables above (BROWSER is intentionally absent
+        # since v4.0.0 — see the sessionVariables note);
+        # OMARCHY_USER_NAME/EMAIL repeat
         # the environment.d values for upstream parity (default/uwsm/default
         # carries user identity in the session env too). EDITOR/SUDO_EDITOR
         # mirror default/bash/envs — env.d is shell, so the upstream `:-`
@@ -620,7 +632,6 @@ in
         environment.etc."xdg/uwsm/env.d/10-omarchy".text = ''
           export OMARCHY_PATH="${cfg.package}/share/omarchy"
           export PATH="${cfg.package}/share/omarchy/bin:$PATH"
-          export BROWSER=omarchy-launch-browser
           export TERMINAL=xdg-terminal-exec
           export EDITOR="''${EDITOR:-omarchy-launch-editor --inline}"
           export SUDO_EDITOR="$EDITOR"
@@ -1282,6 +1293,10 @@ in
             ];
           };
           omarchy-recover-internal-monitor.wantedBy = [ "graphical-session-pre.target" ];
+          # crash-watch: the v4.0.0 journal-fed coredump watcher (crash toast
+          # + agent diagnosis). Upstream enables it from
+          # install/user/first-run/enable-user-units.sh.
+          omarchy-crash-watch.wantedBy = [ "graphical-session.target" ];
         };
       })
 
@@ -1289,6 +1304,17 @@ in
       # own time.timeZone (e.g. from hardware-configuration.nix) wins.
       {
         time.timeZone = lib.mkDefault cfg.timezone;
+        # v4.0.0 upstream /etc/ssh/ssh_config.d/20-omarchy-keepalive.conf
+        # parity (install/config/ssh-keepalive.sh): notice dropped SSH
+        # connections within a minute instead of hanging until TCP gives up.
+        # mkDefault so a consumer's own programs.ssh settings win;
+        # ~/.ssh/config always takes precedence per-host.
+        programs.ssh.extraConfig = lib.mkDefault ''
+          Host *
+            ServerAliveInterval 15
+            ServerAliveCountMax 3
+            ConnectTimeout 10
+        '';
       }
 
       # (J) omarchy.terminal -> xdg-terminal-exec preference list. The
@@ -1307,7 +1333,7 @@ in
       # (K) Lock-screen PAM services. The Quickshell lock plugin
       # authenticates through PAM configs named omarchy-lock-password and
       # omarchy-lock-fingerprint (Service.qml PamContext). Upstream writes
-      # them imperatively from omarchy-setup-lock; here they are declared
+      # them imperatively from omarchy-apply-lock; here they are declared
       # with the verbatim upstream auth stack. Two deliberate deviations:
       # the account phase replaces Arch's `include system-local-login` with
       # pam_unix (NixOS ships no system-local-login service), and the

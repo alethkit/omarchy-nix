@@ -8,7 +8,9 @@ either deliberate NixOS-isms or known gaps, not features.
 
 Omarchy is DHH's "Beautiful, Modern & Opinionated Linux", a Wayland
 desktop distribution, currently on the Quattro generation
-(`4.0.0.alpha`, the `quattro` branch is upstream's default). This port
+(`4.0.0` released 2026-08-14; the `quattro` branch is upstream's default
+and this port tracks it — the vendored `version` file still reads
+`4.0.0.alpha`). This port
 tracks that branch via the `omarchy-src` flake input.
 
 The README on GitHub is intentionally minimal ("Read more at
@@ -63,9 +65,12 @@ that touch vendored files stay in their style:
 Upstream's `install/` tree owns installation orchestration. It runs
 during **ISO chroot finalization**:
 
-- `bin/omarchy-setup-system`: root-owned system setup.
-- `bin/omarchy-setup-hardware`: idempotent hardware-specific setup.
-- `bin/omarchy-finalize-user`: per-user runtime finalization (skill
+- `bin/omarchy-apply-system`: root-owned system setup (renamed from
+  `omarchy-setup-system` in v4.0.0).
+- `bin/omarchy-apply-hardware`: idempotent hardware-specific setup (renamed
+  from `omarchy-setup-hardware`).
+- `bin/omarchy-provision-user`: per-user runtime finalization (renamed from
+  `omarchy-finalize-user`; skill
   symlinks, xdg-user-dirs, mime defaults, `install/user/all.sh`).
 - `install/user/all.sh` runs per-user leaves: `theme.sh`, `chromium.sh`,
   `git.sh`, `xcompose.sh`, `mise.sh`, `default-keyring.sh`, plus
@@ -77,8 +82,8 @@ during **ISO chroot finalization**:
 **This port does not replicate the ISO chroot orchestration** (it carries
 Arch/pacman installer semantics). Instead `install/` is **vendored** and
 the per-user parts run for real:
-`omarchy-finalize-user` + `install/user/all.sh` run on first login via the
-upstream `omarchy-first-run` autostart: pure-config steps (gnome-theme,
+`omarchy-provision-user` + `install/user/all.sh` run on first login via the
+upstream `omarchy-provision-first-run` autostart: pure-config steps (gnome-theme,
 gtk-primary-paste, git, xcompose, default-keyring, xdg-user-dirs,
 enable-user-units, chromium native-messaging hosts) and genuinely useful
 steps (audio-tuning, welcome, wifi, hardware fixups, no-op when the
@@ -87,14 +92,14 @@ hardware does not match). The Arch-packaging steps (`mise.sh`,
 *invitation* hooks (voxtype, fingerprint) are pre-marked done so their
 toasts never fire; voxtype itself is shipped declaratively and the
 lock-screen PAM services are declared natively. What still does
-not run: the root-owned ISO setup (`omarchy-setup-system`,
-`omarchy-setup-hardware`); their effects (packages, services, themes) are
+not run: the root-owned ISO setup (`omarchy-apply-system`,
+`omarchy-apply-hardware`); their effects (packages, services, themes) are
 declared by the NixOS module instead.
 
 ## Upstream defaults (from the vendored source)
 
-These are the defaults encoded in the upstream source (rev `caeffdc2`,
-`4.0.0.alpha`, quattro branch). Compare against them when verifying
+These are the defaults encoded in the upstream source (rev `fa955bf`,
+post-v4.0.0 quattro branch). Compare against them when verifying
 parity:
 
 - **Theme**: `ethereal` (22 rendered files in `current/theme/`).
@@ -104,11 +109,13 @@ parity:
   Ghostty is opt-in via `omarchy-install-terminal ghostty` /
   `omarchy-default-terminal ghostty` (writes `~/.config/xdg-terminals.list`
   and copies `config/ghostty/`).
-- **Browser**: **chromium** (`bin/omarchy-finalize-user` runs
+- **Browser**: **chromium** (`bin/omarchy-provision-user` runs
   `xdg-settings set default-web-browser chromium.desktop`; chromium is
-  in `install/omarchy-base.packages`). Upstream also exports
-  `BROWSER=omarchy-launch-browser` and `TERMINAL=xdg-terminal-exec` via
-  `default/uwsm/default` + `env.d`.
+  in `install/omarchy-base.packages`). Upstream exports
+  `TERMINAL=xdg-terminal-exec` via `default/uwsm/default` + `env.d`;
+  since v4.0.0 `BROWSER=omarchy-launch-browser` is shell-scoped only
+  (`default/bash/envs`) — session-wide it made xdg-settings refuse to
+  change the default browser.
 - **Cursor**: upstream sets **no cursor theme**, only sizes
   (`hl.env("XCURSOR_SIZE","24")`, `hl.env("HYPRCURSOR_SIZE","24")` in
   `default/hypr/envs.lua`). No cursor package in
@@ -140,13 +147,13 @@ parity:
 | **Tree location** | `/usr/share/omarchy` | `$out/share/omarchy` (nix store) | Nix constraint: nothing mutable in `/usr`. `$OMARCHY_PATH` points here. |
 | **Bin on PATH** | `/usr/bin/omarchy-*` (Arch package) | `$OMARCHY_PATH/bin` prepended to session PATH | We chose Approach A (session PATH) over B (top-level `$out/bin/`). The 7 systemd user units that hardcode `/usr/bin/` are path-adapted to store paths in `pkgs/omarchy.nix`, so none are broken. |
 | **OMARCHY_PATH source** | `default/bash/env-bootstrap` (sourced by `/etc/profile.d/omarchy.sh`, skel `.bashrc`, `uwsm/env.d/10-omarchy`) | NixOS `environment.sessionVariables` + `environment.etc."xdg/uwsm/env.d/10-omarchy"` | We do NOT source `env-bootstrap`; it carries Arch/pacman dev-link logic. Same effect via NixOS-native channels. |
-| **Theme render trigger** | ISO chroot finalization (`omarchy-setup-system`) | HM activation script (`omarchyThemeRender`) | No ISO stage on NixOS; run the same upstream `omarchy-theme-set` in HEADLESS mode during `home-manager switch`. |
-| **First-run hooks** | `install/user/first-run/*.sh` on first login | **Runs for real**: `install/` is vendored and `omarchy-first-run` executes on first login | Only the two *invitation* hooks (voxtype, fingerprint) are pre-marked done so their toasts never fire; voxtype ships declaratively, fingerprint PAM is native. The Arch-packaging steps (`mise.sh`, `mise-work.sh`) are no-op stubs. |
-| **Per-user setup** | `install/user/all.sh` (theme, chromium, git, xcompose, mise, keyring) | **Runs** via the vendored `omarchy-finalize-user` on first login | `OMARCHY_USER_NAME`/`EMAIL` come from `omarchy.full_name`/`email_address` (environment.d + /etc/profile). Only `mise.sh`/`mise-work.sh` are no-op'd (Arch tarballs under `/opt/packages`, rejected as a feature). |
+| **Theme render trigger** | ISO chroot finalization (`omarchy-apply-system`) | HM activation script (`omarchyThemeRender`) | No ISO stage on NixOS; run the same upstream `omarchy-theme-set` in HEADLESS mode during `home-manager switch`. |
+| **First-run hooks** | `install/user/first-run/*.sh` on first login | **Runs for real**: `install/` is vendored and `omarchy-provision-first-run` executes on first login | Only the two *invitation* hooks (voxtype, fingerprint) are pre-marked done so their toasts never fire; voxtype ships declaratively, fingerprint PAM is native. The Arch-packaging steps (`mise.sh`, `mise-work.sh`) are no-op stubs. |
+| **Per-user setup** | `install/user/all.sh` (theme, chromium, git, xcompose, mise, keyring) | **Runs** via the vendored `omarchy-provision-user` on first login | `OMARCHY_USER_NAME`/`EMAIL` come from `omarchy.full_name`/`email_address` (environment.d + /etc/profile). Only `mise.sh`/`mise-work.sh` are no-op'd (Arch tarballs under `/opt/packages`, rejected as a feature). |
 | **Hyprland package** | Arch `hyprland` package ( pacman) | `hyprland` flake input, self-contained build against its own nixpkgs | Needs ≥0.56 for the Lua config; stable nixpkgs only has 0.55.4. |
 | **Hyprland Cachix** | N/A (Arch builds from AUR/cache) | Auto-configured in module (`nix.settings.substituters`) | The flake Hyprland package isn't on cache.nixos.org; without this every consumer rebuilds Hyprland from source (OOMs small VMs). |
 | **Terminal default** | **foot** (`hyprland-xdg-terminals.list` → `foot.desktop`; ghostty opt-in) | foot in runtime deps; vendored list + `foot.desktop` installed to the package's `share/`; `/etc/xdg/hyprland-xdg-terminals.list` written from `omarchy.terminal` | The module-level list wins over the vendored fallback, so `omarchy.terminal = "ghostty"` re-points Super+Enter declaratively; an uninstalled choice degrades to foot. |
-| **Browser default** | **chromium** (set in `omarchy-finalize-user` via `xdg-settings`) | **chromium**: in runtime deps; `BROWSER=omarchy-launch-browser` in session env; `chromium-browser.desktop` aliased to `chromium.desktop`; `xdg-settings` runs in finalize-user + HM activation | NixOS names the desktop file `chromium-browser.desktop`; upstream tooling expects `chromium.desktop`. |
+| **Browser default** | **chromium** (set in `omarchy-provision-user` via `xdg-settings`) | **chromium**: in runtime deps; `BROWSER=omarchy-launch-browser` in session env; `chromium-browser.desktop` aliased to `chromium.desktop`; `xdg-settings` runs in finalize-user + HM activation | NixOS names the desktop file `chromium-browser.desktop`; upstream tooling expects `chromium.desktop`. |
 | **Cursor** | no theme (only `XCURSOR_SIZE`/`HYPRCURSOR_SIZE`=24; Adwaita cursors arrive via `gnome-themes-extra` on Arch) | `adwaita-icon-theme` in runtime deps + a `default → Adwaita` fallback package (`xcursor-default-adwaita`) | Upstream sets no theme NAME, so libxcursor resolves theme "default"; the fallback's `icons/default/index.theme` (Inherits=Adwaita) mirrors the Arch oracle byte-for-byte. No theme name is set, same as upstream. |
 
 ## Arch-only surface: classification
@@ -290,8 +297,8 @@ upstream's `enable-user-units.sh`).
 **Omarchy agent skill:**
 
 ```bash
-diff <(old-rev)/default/omarchy-skill/SKILL.md \
-     "$SRC/default/omarchy-skill/SKILL.md"
+diff <(old-rev)/default/agents/skills/omarchy/SKILL.md \
+     "$SRC/default/agents/skills/omarchy/SKILL.md"
 nix build .#checks.x86_64-linux.omarchy-skill
 ```
 

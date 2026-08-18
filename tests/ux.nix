@@ -5,8 +5,9 @@
 #   - a real Super+Enter keypress opens a foot terminal (the full dispatcher
 #     chain: Hyprland bind -> Lua dispatcher -> omarchy-launch-terminal ->
 #     xdg-terminal-exec -> foot), verified via hyprctl clients;
-#   - the session env the module ships (XDG_SESSION_DESKTOP, BROWSER,
-#     TERMINAL, OMARCHY_PATH) is actually in the user activation environment;
+#   - the session env the module ships (XDG_SESSION_DESKTOP, TERMINAL,
+#     OMARCHY_PATH; BROWSER deliberately absent since v4.0.0) is actually
+#     in the user activation environment;
 #   - the default-browser / cursor / first-run / systemd-user-unit wiring the
 #     module + HM layer set up is present and observable.
 #
@@ -199,15 +200,18 @@
     assert "XDG_SESSION_DESKTOP=Hyprland" in env.splitlines(), \
         "XDG_SESSION_DESKTOP=Hyprland missing from session env"
 
-    # --- (5) Session env: OMARCHY_PATH / BROWSER / TERMINAL. ---------------
+    # --- (5) Session env: OMARCHY_PATH / TERMINAL (BROWSER absent). ------
     # Pushed into the activation env by the same autostart import. The values
     # come from environment.sessionVariables + uwsm env.d/10-omarchy; this
-    # proves the session the user actually sees has the omarchy bin on PATH and
-    # the omarchy launchers wired as BROWSER/TERMINAL.
+    # proves the session the user actually sees has the omarchy bin on PATH
+    # and xdg-terminal-exec wired as TERMINAL. BROWSER is deliberately NOT
+    # session-wide since upstream v4.0.0 (it made xdg-settings refuse to
+    # change the default browser); interactive shells get it from
+    # default/bash/envs instead — so its absence here is the contract.
     assert any(l.startswith("OMARCHY_PATH=") for l in env.splitlines()), \
         "OMARCHY_PATH missing from session env"
-    assert "BROWSER=omarchy-launch-browser" in env.splitlines(), \
-        "BROWSER=omarchy-launch-browser missing from session env"
+    assert "BROWSER=omarchy-launch-browser" not in env.splitlines(), \
+        "BROWSER=omarchy-launch-browser must not be session-wide (v4.0.0)"
     assert "TERMINAL=xdg-terminal-exec" in env.splitlines(), \
         "TERMINAL=xdg-terminal-exec missing from session env"
     # Issue #60: without NAUTILUS_4_EXTENSION_DIR Nautilus never loads
@@ -405,9 +409,10 @@
     assert "/nix/store" in out, out
     _rc, out = machine.execute("omarchy-file-select --definitely-unknown 2>&1")
     assert _rc == 2 and "unknown option" in out, out
-    # model-usage scanners (bump follow-up): executable with store python
+    # agent-usage scanners (v4.0.0: standalone bin scripts with store
+    # python shebangs, replaced the shell/plugins/model-usage QML providers)
     machine.succeed(
-        "/run/current-system/sw/share/omarchy/shell/plugins/model-usage/scripts/claude_usage_scanner.py --help >/dev/null"
+        "/run/current-system/sw/share/omarchy/bin/omarchy-agent-usage-claude --help >/dev/null"
     )
 
     # menu rewiring is live in the vendored tree
@@ -520,7 +525,7 @@
     assert _rc == 0, out
 
     # runtime PAM writers are declarative stubs and must not write /etc/pam.d
-    out = machine.succeed("omarchy-setup-lock")
+    out = machine.succeed("omarchy-apply-lock")
     assert "declarative" in out, out
     out = machine.succeed("omarchy-setup-security-fingerprint")
     assert "omarchy.fingerprint.enable" in out, out
@@ -691,8 +696,8 @@
     assert cfgerr == "", "Hyprland config errors on the running session: %r" % cfgerr
 
     # --- (7) First-run evidence. -------------------------------------------
-    # autostart.lua runs omarchy-first-run on hyprland.start; it calls
-    # omarchy-finalize-user (which writes ~/.XCompose via install/user/all.sh ->
+    # autostart.lua runs omarchy-provision-first-run on hyprland.start; it calls
+    # omarchy-provision-user (which writes ~/.XCompose via install/user/all.sh ->
     # xcompose.sh) then logs each step and marks done/first-run-user on success.
     machine.wait_until_succeeds(
         "test -f /home/demo/.local/state/omarchy/done/first-run-user",
@@ -718,7 +723,7 @@
             ".pi/agent/skills/omarchy",
         ]
         expected = machine.succeed(
-            as_demo("readlink -f \"$OMARCHY_PATH/default/omarchy-skill\"")
+            as_demo("readlink -f \"$OMARCHY_PATH/default/agents/skills/omarchy\"")
         ).strip()
         assert expected.startswith("/nix/store/"), expected
 
@@ -861,23 +866,23 @@
         mono = machine.succeed("fc-match monospace").strip()
         assert "JetBrainsMono" in mono, "fc-match monospace -> %r" % mono
 
-        # B16 regression guard: nixpkgs wraps tte (comm = .tte-wrapped), so
-        # the screensaver must tolerate the wrapped name in pgrep/pkill -x,
-        # else its respawn loop OOMs the session. The pattern must stay
-        # <=15 chars — a longer one makes pgrep warn "pattern ... longer
-        # than 15 characters" on every call, and this pgrep fires once per
-        # second in the wait loop, so the warnings pile up behind the tte
-        # canvas and flash at every effect change (found on real AMD
-        # hardware).
+        # B16 regression guard: nixpkgs wraps ttfx (v4.0.0 Rust TTE port;
+        # comm = .ttfx-wrapped), so the screensaver must tolerate the
+        # wrapped name in pgrep/pkill -x, else its respawn loop OOMs the
+        # session. The pattern must stay <=15 chars — a longer one makes
+        # pgrep warn "pattern ... longer than 15 characters" on every call,
+        # and this pgrep fires once per second in the wait loop, so the
+        # warnings pile up behind the ttfx canvas and flash at every effect
+        # change (found on real AMD hardware).
         script = machine.succeed(
             "cat /run/current-system/sw/share/omarchy/bin/omarchy-screensaver"
         )
-        assert '-x "\\.?tte.*"' in script, \
-            "screensaver lost the wrapped-tte pgrep/pkill tolerance (B16)"
+        assert '-x "\\.?ttfx.*"' in script, \
+            "screensaver lost the wrapped-ttfx pgrep/pkill tolerance (B16)"
 
         # The exact pattern must not trip pgrep's >15-char warning (the
         # source of the console text flashing at effect changes).
-        _st, out = machine.execute("pgrep -x '\\.?tte.*' 2>&1")
+        _st, out = machine.execute("pgrep -x '\\.?ttfx.*' 2>&1")
         assert "longer than" not in out, \
             "pgrep pattern triggers the >15-char warning: %r" % out
 
@@ -1004,7 +1009,11 @@
         # sites. New upstream execs must be reviewed (and any new binaries
         # probed) before the baseline is bumped deliberately. Double quotes
         # only — as_demo wraps cmd in single quotes.
-        qml_exec_baseline = 114
+        # v4.0.0: 114 → 121 — new panels (agents, speedtest, disk-speedtest,
+        # wifiqr) + SpeedTestOverlay; audited execs: omarchy-network-status,
+        # omarchy-disk-speedtest, coreutils find, agents-panel usage
+        # scanning via the omarchy-agent-usage-* bin scripts (PATH-resident).
+        qml_exec_baseline = 121
         qml_exec_count = int(machine.succeed(
             as_demo(
                 "grep -rE --include=\"*.qml\" "
@@ -1161,9 +1170,10 @@
         # Mirror the cp -aL count tripwire: package unit dir must match
         # unit_names exactly (count + names).
         unit_names = [
-            "bt-agent", "omarchy-fcitx5", "omarchy-migrate-notify",
-            "omarchy-recover-internal-monitor", "omarchy-sleep-lock",
-            "omarchy-speaker-tuning", "omarchy-tailscale-receive",
+            "bt-agent", "omarchy-crash-watch", "omarchy-fcitx5",
+            "omarchy-migrate-notify", "omarchy-recover-internal-monitor",
+            "omarchy-sleep-lock", "omarchy-speaker-tuning",
+            "omarchy-tailscale-receive",
         ]
         # Derive package root from OMARCHY_PATH ($out/share/omarchy) in
         # Python so we never put a shell parameter-expansion brace form
