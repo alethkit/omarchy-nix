@@ -330,6 +330,18 @@ let
         # libvips (nixpkgs attr `vips`): omarchy-image-picker thumbnails
         # (v4.0.0; upstream package name libvips).
         vips
+        # qt6-imageformats (nixpkgs attr qt6.qtimageformats): webp decoding
+        # for the shell — v4.0.2 stores theme backgrounds as webp
+        # (migration 1787133200 installs the Arch package; we ship it).
+        qt6.qtimageformats
+        # vi: a standard terminal editor (v4.0.2; migration 1788596255
+        # installs the Arch `vi` package). The nixpkgs 26.05 pin has no `vi`
+        # attr — nvi provides the same `vi` command.
+        nvi
+        # cups-pk-helper: system-config-printer routes printer administration
+        # through polkit (v4.0.2 CUPS hardening; upstream installs it in
+        # omarchy-base.packages).
+        cups-pk-helper
         # fwupdmgr for omarchy-update-firmware (service enabled in parity block).
         fwupd
 
@@ -726,6 +738,12 @@ in
       # blocks (Task 5). Unknown names throw an eval error naming the file —
       # in the normal flow omarchy-nix-add validates before writing.
       #
+      # Names are nixpkgs attribute *paths*, not only top-level attrs:
+      # omarchy-nix-add accepts `nixpkgs#kdePackages.dolphin` (flake attr
+      # paths) and writes that string into the JSON. Resolve with
+      # attrByPath so a literal-dot pkgs.${n} lookup cannot reject a real
+      # nested package. Same split as catalog-consistency probes.
+      #
       # IMPORTANT: managedFeatures is config-dependent (it reads
       # cfg.managedPackagesFile). Referencing it at the mkMerge LIST level
       # would force it during the module system's property-pushing phase,
@@ -751,7 +769,14 @@ in
                   throw "${toString cfg.managedPackagesFile}: unknown feature '${builtins.head unknown}' (known: ${builtins.concatStringsSep ", " (builtins.attrNames managedFeatureDefs)})"
                 else
                   map (
-                    n: pkgs.${n} or (throw "${toString cfg.managedPackagesFile}: unknown nixpkgs attribute '${n}'")
+                    n:
+                    let
+                      path = lib.splitString "." n;
+                    in
+                    if lib.hasAttrByPath path pkgs then
+                      lib.getAttrFromPath path pkgs
+                    else
+                      throw "${toString cfg.managedPackagesFile}: unknown nixpkgs attribute '${n}'"
                   ) managedPkgs;
             }
           ]
@@ -788,10 +813,13 @@ in
         services.power-profiles-daemon.enable = lib.mkDefault true;
         services.printing = {
           enable = lib.mkDefault true;
-          # cups-browsed: remote printer discovery. The seeded autostart
-          # print-applet.desktop expects a running CUPS. nixpkgs 26.05 exposes
-          # this as services.printing.browsed (not .cups-browsed).
-          browsed.enable = lib.mkDefault true;
+          # cups-browsed: remote printer discovery. Upstream removed automatic
+          # printer discovery entirely in v4.0.2 (security hardening,
+          # migration 1788009111 drops cups-browsed); match that here. The
+          # seeded autostart print-applet.desktop still expects a running
+          # CUPS (kept). nixpkgs 26.05 exposes this as services.printing.browsed
+          # (not .cups-browsed).
+          browsed.enable = lib.mkDefault false;
         };
         virtualisation.docker.enable = lib.mkDefault true;
         # gnome-keyring: upstream ships it; the old "out of scope" note in
@@ -982,13 +1010,10 @@ in
           options usbcore autosuspend=-1
         '';
 
-        # Auto-register remote IPP printers discovered via Avahi (upstream
-        # etc/cups/cups-browsed.conf): nixpkgs renders browsedConf to
-        # /etc/cups/cups-browsed.conf; without it cups-browsed 2.x does not
-        # create queues for discovered printers.
-        services.printing.browsedConf = lib.mkDefault ''
-          CreateRemotePrinters Yes
-        '';
+        # (Upstream's etc/cups/cups-browsed.conf — CreateRemotePrinters Yes —
+        # is gone: v4.0.2 removed automatic printer discovery and the module
+        # disables services.printing.browsed above, so there is no browsedConf
+        # to render.)
 
         # dirmngr keyservers + quick connect timeout (upstream
         # etc/gnupg/dirmngr.conf), verbatim from the vendored tree.
@@ -998,16 +1023,19 @@ in
           source = "${cfg.package}/share/omarchy/etc/gnupg/dirmngr.conf";
         };
 
-        # sudo parity (upstream etc/sudoers.d/omarchy-passwd-tries,
-        # omarchy-asdcontrol, omarchy-tzupdate): 10 password tries; NOPASSWD
-        # for asdcontrol (Apple Studio Display brightness from the bar),
-        # tzupdate and timedatectl set-timezone (menu Setup → Timezone).
-        # Profile paths (not store paths) so exclude_packages filtering
-        # still works — an uninstalled command makes the rule inert instead
-        # of a closure reference. Plain assignment, not mkDefault: nixpkgs
-        # defines its own default extraRules/extraConfig at normal priority,
-        # which would silently drop mkDefault content; same-priority
-        # definitions concatenate.
+        # sudo parity (upstream etc/sudoers.d/omarchy-passwd-tries and
+        # omarchy-tzupdate): 10 password tries; NOPASSWD for tzupdate (port
+        # addition) and timedatectl set-timezone. v4.0.1 removed upstream's
+        # omarchy-asdcontrol grant (passwordless path to root): the Apple
+        # Studio Display brightness script now uses plain `sudo asdcontrol`
+        # and takes the prompt, same here. The timedatectl rule is
+        # upstream's v4.0.2 tightening: a ^-anchored regex accepting exactly
+        # one well-formed timezone argument. Profile paths (not store paths)
+        # so exclude_packages filtering still works — an uninstalled command
+        # makes the rule inert instead of a closure reference. Plain
+        # assignment, not mkDefault: nixpkgs defines its own default
+        # extraRules/extraConfig at normal priority, which would silently
+        # drop mkDefault content; same-priority definitions concatenate.
         security.sudo.extraConfig = ''
           Defaults passwd_tries=10
         '';
@@ -1016,15 +1044,11 @@ in
             groups = [ "wheel" ];
             commands = [
               {
-                command = "/run/current-system/sw/bin/asdcontrol";
-                options = [ "NOPASSWD" ];
-              }
-              {
                 command = "/run/current-system/sw/bin/tzupdate";
                 options = [ "NOPASSWD" ];
               }
               {
-                command = "/run/current-system/sw/bin/timedatectl set-timezone *";
+                command = "/run/current-system/sw/bin/timedatectl ^set-timezone [A-Za-z0-9_+][A-Za-z0-9_+.-]*(/[A-Za-z0-9_+][A-Za-z0-9_+.-]*)*$";
                 options = [ "NOPASSWD" ];
               }
             ];
@@ -1143,6 +1167,20 @@ in
         # headless/special-networking host can disable them.
         networking.networkmanager.enable = lib.mkDefault true;
         hardware.bluetooth.enable = lib.mkDefault true;
+
+        # Order NetworkManager ahead of the display manager -- and so ahead
+        # of the graphical session and quickshell. The shell binds its
+        # Quickshell.Networking backend to NetworkManager's D-Bus name once,
+        # at process start, and quickshell 0.3.0 has no NameOwnerChanged
+        # recovery (basecamp/omarchy#7324). If the session wins the startup
+        # race on a first boot, the network panel shows NOT CONNECTED while
+        # the link is up (live IP/ping stats from the status poller), and the
+        # first-run DHCP click no-ops until the shell is restarted.
+        # Before= is ordering only -- no Requires= -- so a failed
+        # NetworkManager never blocks reaching the login screen.
+        systemd.services.NetworkManager = lib.mkIf config.networking.networkmanager.enable {
+          before = [ "display-manager.service" ];
+        };
 
         # External monitor brightness over DDC/CI (omarchy-brightness-display-ddc).
         # Loads i2c-dev and creates the i2c group; the user still needs to be

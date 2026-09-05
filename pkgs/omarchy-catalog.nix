@@ -195,11 +195,9 @@
       binaries = [ "copilot" ];
       unfreeNames = [ "github-copilot-cli" ];
     };
-    "install.ai.gemini" = {
-      arch = "gemini-cli";
-      pkgs = [ "gemini-cli" ];
-      binaries = [ "gemini" ];
-    };
+    # v4.0.1: upstream replaced Gemini with Antigravity (agy); the 2f5a153c27
+    # pin has no antigravity-cli attr, so there is no agy entry either — the
+    # setup.default.agent.agy menu line is dropped at package time (like omp).
     "install.ai.grok" = {
       arch = "grok-cli";
       pkgs = [ "grok-cli" ];

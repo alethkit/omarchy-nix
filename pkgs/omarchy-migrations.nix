@@ -60,6 +60,17 @@
   "1786549201.sh" = "user-safe"; # install the pick-a-default-agent invitation hook ($HOME)
   "1786643346.sh" = "user-safe"; # Copy URL shortcut re-registration (Chromium profile, $HOME)
   "1786782461.sh" = "user-safe"; # remove literal \n[text-bindings] line in foot.ini ($HOME)
+  # v4.0.1/v4.0.2 wave:
+  "1787481315.sh" = "user-safe"; # re-stage the current theme to drop installed-theme code
+  #                           # (theme staging is $HOME-only; missing theme falls back
+  #                           # to omarchy-theme-set "Tokyo Night", also $HOME)
+  "1787618700.sh" = "user-safe"; # input-device toggles: generated Lua -> plain name file
+  #                           # ($HOME/.local/state) + hyprctl reload
+  "1787843905.sh" = "user-safe"; # link omarchy agent skills into ~/.hermes/skills
+  #                           # (ln -sfn, idempotent; same model as 1786098807)
+  "1788595060.sh" = "user-safe"; # Chromium copy-url + ytdlp native messaging hosts for
+  #                           # Brave Origin ($HOME registration; browser not packaged on
+  #                           # NixOS, so the hosts simply never load)
 
   # ------------------------------------------------------------------- skip
   "1778623107.sh" = "skip"; # mpv-mpris via omarchy-pkg-add (pacman)
@@ -128,4 +139,43 @@
   "1786952219.sh" = "skip"; # mise -> mise-bin repo swap (mise model rejected — catalog is final)
   "1786183928.sh" = "skip"; # regenerate mise tool wrappers (mise model rejected — catalog is final;
   #                           # omarchy-refresh-applications itself stays user-safe)
+  # v4.0.1/v4.0.2 wave:
+  "1786719479.sh" = "skip"; # Gemini -> Antigravity via omarchy-mise-install (mise model rejected;
+  #                           # no NixOS install ever had a gemini mise wrapper or the agent file
+  #                           # set to gemini, so every branch is a no-op here)
+  "1787133200.sh" = "skip"; # qt6-imageformats via omarchy-pkg-add (declarative: module ships
+  #                           # qt6.qtimageformats for webp theme backgrounds)
+  "1787215824.sh" = "skip"; # hey via mise wrapper (mise model rejected; hey-cli not in nixpkgs)
+  "1787342993.sh" = "skip"; # ori via mise wrapper (mise model rejected; ori not in nixpkgs)
+  "1787399318.sh" = "skip"; # quickshell-git -> quickshell via pacman (module ships nixpkgs
+  #                           # quickshell; upstream 0.3.1 switch-back is what we already run)
+  "1787494718.sh" = "skip"; # FIDO2 authfile ownership in /etc/fido2 (security.pam.u2f owns the
+  #                           # authfile declaratively on NixOS)
+  "1787515927.sh" = "skip"; # browser policy dir hardening under /etc (module-owned on NixOS)
+  "1787573629.sh" = "skip"; # regenerate mise wrappers with --quiet (mise model rejected)
+  "1787580187.sh" = "skip"; # docker group opt-out: gpasswd + Docker.desktop refresh (group
+  #                           # membership is users.users.<name>.extraGroups on NixOS; the port
+  #                           # never put anyone in docker by default)
+  "1787589206.sh" = "skip"; # pacman SigLevel for the [omarchy] repo (pacman)
+  "1787666837.sh" = "skip"; # Dell XPS 13 sidecar amps: pkg-add + sudo apply (Arch firmware
+  #                           # tooling, dell-xps13-sidecar-amps not in nixpkgs)
+  "1787691200.sh" = "skip"; # Chromium first-run EULA seed at /usr/lib/chromium (store path is
+  #                           # immutable; nixpkgs chromium answers its own first run)
+  "1787760281.sh" = "skip"; # Hermes CLI wrapper via mise (mise model rejected; hermes not in
+  #                           # nixpkgs — its menu entries stay behind omarchy-pkg-present guards)
+  "1787815267.sh" = "skip"; # CUPS account separation: pacman + systemctl + sysusers (CUPS is
+  #                           # services.printing on NixOS)
+  "1787865477.sh" = "skip"; # drop the input group grant via gpasswd (users.users is declarative;
+  #                           # NixOS never granted input group-wide)
+  "1788009111.sh" = "skip"; # remove cups-browsed + implicitclass queues (declarative: the module
+  #                           # sets services.printing.browsed.enable = false, same v4.0.2 intent)
+  "1788025225.sh" = "skip"; # remove privileged files from retired Omarchy installers
+  #                           # (/etc/sudoers.d, /etc/systemd leftovers — never existed on NixOS)
+  "1788102906.sh" = "skip"; # Omarchy 3 legacy XCompose include + power udev rules (Omarchy 3
+  #                           # artifacts never existed on NixOS installs)
+  "1788112314.sh" = "skip"; # rc channel pacman repo pointers (pacman)
+  "1788124236.sh" = "skip"; # sshd password-auth hardening via /etc/ssh drop-in (services.openssh
+  #                           # is declarative; omarchy-setup-security-sshd is nixos-adapted)
+  "1788596255.sh" = "skip"; # vi via omarchy-pkg-add (declarative: module ships nvi as the `vi`
+  #                           # command; the pin has no `vi` attr)
 }

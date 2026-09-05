@@ -159,6 +159,23 @@
       class = "declarative-note";
       note = "There is no pacman package cache on NixOS: old generations are garbage-collected with nix-collect-garbage -d (or nix.settings.auto-optimise-store / gc.options in your flake).";
     };
+    # v4.0.1: the browser-accent policy helper — its only caller
+    # (omarchy-theme-set-browser) is a no-op stub on NixOS, and the helper
+    # itself is stubbed in pkgs/omarchy.nix for the same reason.
+    omarchy-theme-set-browser-policy = {
+      class = "declarative-note";
+      note = "Browser policy directories under /etc are module-owned on NixOS (programs.chromium.policies / environment.etc); the browser accent color cannot follow the theme at runtime.";
+    };
+    # v4.0.2 sudoless Docker toggle: `usermod -aG docker` / `gpasswd -d` are
+    # account mutations; on NixOS group membership is part of the flake.
+    omarchy-setup-security-sudoless-docker = {
+      class = "declarative-note";
+      note = "Group membership is declarative: add \"docker\" to users.users.<name>.extraGroups in your flake config and rebuild (then log out/in — the docker group is passwordless root, the same warning upstream shows).";
+    };
+    omarchy-remove-security-sudoless-docker = {
+      class = "declarative-note";
+      note = "Group membership is declarative: remove \"docker\" from users.users.<name>.extraGroups in your flake config and rebuild.";
+    };
 
     # --- nixos-adapted: hand-rewritten in pkgs/omarchy.nix postPatch --------
     # (system mutations removed; user-state flows kept)
@@ -196,6 +213,13 @@
     # declarative stub; only the /usr/bin/chatgpt launch path is adapted
     # (binaries live on PATH on NixOS).
     omarchy-install-ai-chatgpt = {
+      class = "nixos-adapted";
+    };
+    # v4.0.2 remove-ai wave: only the ollama variant mutates system state
+    # (unit + /var/lib) — both are services.ollama-owned on NixOS; the
+    # pkg-drop core routes into the declarative flow and the $HOME model
+    # cleanup is kept.
+    omarchy-remove-ai-ollama = {
       class = "nixos-adapted";
     };
     omarchy-install-dev-env = {
@@ -321,6 +345,11 @@
     # machinery (omarchy-system-factory-reset is a declarative-note stub);
     # NixOS rolls back via boot generations.
     "setup.reset"
+    # v4.0.2 Setup/Remove > Security > Sudoless Docker: usermod/gpasswd docker
+    # (stubbed declarative-note — group membership is users.users.<name>.
+    # extraGroups on NixOS, with the same passwordless-root warning).
+    "setup.security.sudoless-docker"
+    "remove.security.sudoless-docker"
     # Setup > Network > DNS: omarchy-dns writes /etc/NetworkManager and
     # /etc/systemd/resolved.conf imperatively (stubbed declarative-note);
     # DNS on NixOS is services.resolved / networking.nameservers.

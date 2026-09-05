@@ -77,7 +77,6 @@ let
     "install.ai.codex": {"icon":"󱚤","label":"Codex","when":"! omarchy-pkg-present codex-cli","action":"omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.ai.codex'"},
     "install.ai.copilot": {"icon":"󱚤","label":"GitHub Copilot","when":"! omarchy-pkg-present github-copilot-cli","action":"omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.ai.copilot'"},
     "install.ai.crush": {"icon":"󱚤","label":"Crush","when":"! omarchy-pkg-present crush-bin","action":"omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.ai.crush'"},
-    "install.ai.gemini": {"icon":"󱚤","label":"Gemini","when":"! omarchy-pkg-present gemini-cli","action":"omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.ai.gemini'"},
     "install.ai.grok": {"icon":"󱚤","label":"Grok","when":"! omarchy-pkg-present grok-cli","action":"omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.ai.grok'"},
     "install.ai.opencode": {"icon":"󱚤","label":"OpenCode","when":"! omarchy-pkg-present opencode","action":"omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.ai.opencode'"},
     "install.ai.pi": {"icon":"󱚤","label":"Pi","when":"! omarchy-pkg-present pi-coding-agent","action":"omarchy-launch-floating-terminal-with-presentation 'omarchy-nix-add install.ai.pi'"},
@@ -168,11 +167,13 @@ stdenv.mkDerivation (finalAttrs: {
           --replace-fail "/usr/bin/omarchy-tailscale-receive" \
             "$out/share/omarchy/bin/omarchy-tailscale-receive"
 
-        # omarchy-launch-browser resolves the .desktop via a fixed brace list of
-        # data dirs. Arch has /usr/share/applications; NixOS puts system apps in
-        # /run/current-system/sw/share/applications. Add that path so chromium
-        # (and any other default) resolves after xdg-settings.
-        substituteInPlace bin/omarchy-launch-browser \
+        # omarchy-launch-browser and omarchy-launch-webapp resolve the .desktop
+        # via a fixed brace list of data dirs. Arch has /usr/share/applications;
+        # NixOS puts system apps in /run/current-system/sw/share/applications.
+        # Add that path so chromium (and any other default) resolves after
+        # xdg-settings. Webapps used to skip the Exec= lookup and hand
+        # --app=https://… to uwsm-app as the application path.
+        substituteInPlace bin/omarchy-launch-browser bin/omarchy-launch-webapp \
           --replace-fail \
             '{~/.local,~/.nix-profile,/usr}/share/applications' \
             '{~/.local,~/.nix-profile,/run/current-system/sw,/usr}/share/applications'
@@ -507,6 +508,16 @@ stdenv.mkDerivation (finalAttrs: {
         substituteInPlace bin/omarchy-install-ai-chatgpt \
           --replace-fail 'uwsm-app -- /usr/bin/chatgpt' 'uwsm-app -- chatgpt'
 
+        # omarchy-remove-ai-ollama: the unit + /var/lib state are owned by
+        # services.ollama on NixOS (removed with the feature at rebuild); the
+        # pkg-drop core routes into the declarative flow and the $HOME model
+        # cleanup is kept as-is.
+        substituteInPlace bin/omarchy-remove-ai-ollama \
+          --replace-fail 'sudo systemctl disable --now ollama.service 2>/dev/null || true' \
+                         'echo "NixOS: the ollama service is declarative — the menu removal (omarchy-nix-remove) disables it at rebuild."' \
+          --replace-fail 'sudo rm -rf /var/lib/ollama' \
+                         'echo "NixOS: /var/lib/ollama is services.ollama state — remove it yourself if you want the models gone."'
+
         # omarchy-setup-security-sshd: the daemon + firewall are declarative
         # (services.openssh.enable opens port 22 on NixOS); the useful
         # user-state subset — authorizing SSH keys — is kept.
@@ -664,13 +675,10 @@ stdenv.mkDerivation (finalAttrs: {
     EOF
         chmod +x bin/omarchy-remove-security-sshd
 
-        # omarchy-remove-dev-env: mise/rustup/opam arms are user-level (kept);
-        # the two pacman arms (php / symfony-cli) become a note.
-        substituteInPlace bin/omarchy-remove-dev-env \
-          --replace-fail 'sudo pacman -Rns --noconfirm php composer php-sqlite xdebug 2>/dev/null || true' \
-                         'echo "NixOS: php/composer/xdebug system packages are declarative — remove them from your flake config (mise runtimes are removed below)."' \
-          --replace-fail 'sudo pacman -Rns --noconfirm symfony-cli 2>/dev/null || true' \
-                         'echo "NixOS: symfony-cli is declarative — remove it from your flake config and rebuild."'
+        # omarchy-remove-dev-env: mise/rustup/opam arms are user-level (kept).
+        # (Post-v4.0.2 upstream replaced the two pacman arms with
+        # omarchy-pkg-drop, which this port already routes declaratively —
+        # no substitution needed anymore.)
 
         # omarchy-remove-launcher-entry: on NixOS a .desktop outside $HOME
         # belongs to a system package — point at omarchy-nix-remove instead of
@@ -796,6 +804,26 @@ stdenv.mkDerivation (finalAttrs: {
     exit 0
     EOF
         chmod +x bin/omarchy-theme-set-browser
+
+        # omarchy-theme-set-browser-policy (v4.0.1): the privileged half of
+        # the browser-accent flow — writes color.json under /etc/*/policies/
+        # via the etc/sudoers.d/omarchy-theme-browser grant. Its only caller
+        # is omarchy-theme-set-browser, which this port already stubs to a
+        # no-op (policy dirs are module-owned on NixOS), so the helper is
+        # unreachable; stub it the same way rather than shipping a sudo
+        # helper that writes paths the module owns.
+        cat >bin/omarchy-theme-set-browser-policy <<'EOF'
+    #!/bin/bash
+    # omarchy:summary=Write the theme accent color into browser managed-policy files
+    # omarchy:hidden=true
+    #
+    # omarchy-nix: browser policy directories under /etc are owned by the
+    # module system (programs.chromium.policies / environment.etc); runtime
+    # policy writes are impossible and the browser accent color does not
+    # follow the theme. Unreachable: omarchy-theme-set-browser is a no-op.
+    exit 0
+    EOF
+        chmod +x bin/omarchy-theme-set-browser-policy
 
         # omarchy-install-dev-env: drop the /etc/php mutations from the PHP
         # flow (php.ini + xdebug.ini are declarative on NixOS); the mise-based
@@ -1410,10 +1438,28 @@ stdenv.mkDerivation (finalAttrs: {
           --replace-fail '[[ -d $HOME/.local/share/mise/installs/deno ]]' 'omarchy-pkg-present deno' \
           --replace-fail '[[ -d $HOME/.local/share/mise/installs/elixir ]]' 'omarchy-pkg-present elixir'
 
-        # omp (oh-my-pi) is not in nixpkgs — drop its default-agent menu
-        # entry (grep guard keeps this fail-closed, like --replace-fail).
-        grep -q '"setup.default.agent.omp":' default/omarchy/omarchy-menu.jsonc
-        sed -i '/"setup.default.agent.omp":/d' default/omarchy/omarchy-menu.jsonc
+        # Agents/apps with no nixpkgs package on the 2f5a153c27 pin — drop
+        # their menu entries (grep guards keep this fail-closed, like
+        # --replace-fail): omp (oh-my-pi), agy (Antigravity — upstream's
+        # Gemini replacement; antigravity-cli is not on the pin yet), ori
+        # and hermes default-agent choices, the Hermes Desktop app pair, and
+        # T3 Code (t3code-bin).
+        for drop_key in \
+          setup.default.agent.omp \
+          setup.default.agent.agy \
+          setup.default.agent.ori \
+          setup.default.agent.hermes \
+          install.ai.hermes \
+          remove.ai.hermes \
+          install.ai.t3-code \
+          remove.ai.t3-code
+        do
+          grep -q "\"$drop_key\":" default/omarchy/omarchy-menu.jsonc || {
+            echo "omarchy-menu.jsonc: expected entry to drop is missing: $drop_key" >&2
+            exit 1
+          }
+          sed -i "/\"$drop_key\":/d" default/omarchy/omarchy-menu.jsonc
+        done
 
         # Install > AI entries for the selectable default agents (Setup >
         # Defaults > Agent). Upstream lazy-installs agents via mise and needs
@@ -1429,7 +1475,6 @@ stdenv.mkDerivation (finalAttrs: {
           install.ai.codex \
           install.ai.copilot \
           install.ai.crush \
-          install.ai.gemini \
           install.ai.grok \
           install.ai.opencode \
           install.ai.pi
@@ -1443,22 +1488,23 @@ stdenv.mkDerivation (finalAttrs: {
         sed -i '/"install.ai.ollama":/r ${agentMenuEntries}' default/omarchy/omarchy-menu.jsonc
 
         # omarchy-default-agent: upstream lazy-installs agents with
-        # `mise use -g`; mise-fetched prebuilt binaries don't run on NixOS, so
-        # route installation through the nix catalog instead. Probe the PATH
-        # (an agent installed via the catalog or by hand counts), send missing
-        # agents to Menu > Install > AI, and only write the default once the
-        # binary exists.
+        # `mise use -g` (or, for Hermes, its own mise installer); mise-fetched
+        # prebuilt binaries don't run on NixOS, so route installation through
+        # the nix catalog instead. Probe the PATH (an agent installed via the
+        # catalog or by hand counts) and only write the default once the
+        # binary exists. The upstream --install re-run inside the floating
+        # terminal is kept: it lands in the patched agent_install below.
         substituteInPlace bin/omarchy-default-agent \
-          --replace-fail 'if [[ $installing == "false" ]] && ! mise where "$agent_package" &>/dev/null; then' \
-                         'if [[ $installing == "false" ]] && omarchy-cmd-missing "$agent"; then' \
-          --replace-fail 'exec omarchy-launch-floating-terminal-with-presentation omarchy-default-agent --install "$agent"' \
-                         'exec omarchy-launch-floating-terminal-with-presentation "omarchy-nix-add install.ai.$agent"' \
-          --replace-fail 'if ! mise use -g "$agent_package"; then' \
-                         'if omarchy-cmd-missing "$agent"; then' \
+          --replace-fail 'agent_present() { mise where "$agent_package" &>/dev/null; }' \
+                         'agent_present() { ! omarchy-cmd-missing "$agent"; }' \
+          --replace-fail 'agent_install() { mise use -g "$agent_package"; }' \
+                         'agent_install() { ! omarchy-cmd-missing "$agent" || omarchy-nix-add "install.ai.$agent"; }' \
+          --replace-fail 'agent_present() { "$agent_installer" --check; }' \
+                         'agent_present() { ! omarchy-cmd-missing "$agent"; }' \
+          --replace-fail 'agent_install() { "$agent_installer" --now; }' \
+                         'agent_install() { ! omarchy-cmd-missing "$agent" || omarchy-nix-add "install.ai.$agent"; }' \
           --replace-fail 'echo "Could not install $name with mise" >&2' \
-                         'echo "$name is not installed — add it with Menu > Install > AI > $name." >&2' \
-          --replace-fail 'echo "Could not set $name as the default coding agent" >&2' \
-                         'echo "$name is not installed — add it with Menu > Install > AI > $name." >&2'
+                         'echo "Could not install $name from the nix catalog" >&2'
   '';
 
   # No configure/build step — the upstream tree is consumed as-is.

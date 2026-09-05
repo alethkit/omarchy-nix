@@ -1013,7 +1013,13 @@
         # wifiqr) + SpeedTestOverlay; audited execs: omarchy-network-status,
         # omarchy-disk-speedtest, coreutils find, agents-panel usage
         # scanning via the omarchy-agent-usage-* bin scripts (PATH-resident).
-        qml_exec_baseline = 121
+        # v4.0.1: 121 → 122 — Util.execDetached gained the argv form
+        # (notification click actions run as argv, never shell strings:
+        # ["bash","-lc",'exec "$@"',...].concat(argv)) and the network panel
+        # gained the captive-portal sign-in action
+        # (["omarchy-launch-browser", Model.captivePortalUrl] — url validated
+        # upstream; launcher resolves the NixOS .desktop glob).
+        qml_exec_baseline = 122
         qml_exec_count = int(machine.succeed(
             as_demo(
                 "grep -rE --include=\"*.qml\" "

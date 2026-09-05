@@ -8,7 +8,7 @@ either deliberate NixOS-isms or known gaps, not features.
 
 Omarchy is DHH's "Beautiful, Modern & Opinionated Linux", a Wayland
 desktop distribution, currently on the Quattro generation
-(`4.0.0` released 2026-08-14; the `quattro` branch is upstream's default
+(`v4.0.2` released 2026-09; the `quattro` branch is upstream's default
 and this port tracks it — the vendored `version` file still reads
 `4.0.0.alpha`). This port
 tracks that branch via the `omarchy-src` flake input.
@@ -98,8 +98,8 @@ declared by the NixOS module instead.
 
 ## Upstream defaults (from the vendored source)
 
-These are the defaults encoded in the upstream source (rev `fa955bf`,
-post-v4.0.0 quattro branch). Compare against them when verifying
+These are the defaults encoded in the upstream source (rev `110cb8f5`,
+post-v4.0.2 quattro branch). Compare against them when verifying
 parity:
 
 - **Theme**: `ethereal` (22 rendered files in `current/theme/`).
@@ -171,7 +171,7 @@ build); this table is the feature-level summary.
 | **Deferred** | Possible on NixOS, not done | NordVPN service (menu entry deleted; verified 2026-07-31: the package + `services.nordvpn` already reached the 26.05 channel after our `2f5a153c27` pin — re-add as a catalog feature once the pin reaches a revision carrying both); zen / brave-origin browsers (AUR-only, no nixpkgs attrs on the 26.05 pin; menu entries deleted) |
 | **Blocked / untested** | Needs an external precondition | Fingerprint **reader** on real hardware (the PAM services themselves are declared and pamtester-verified in `checks.omarchy-ux`); real-hardware specifics of the behavioral surface; menu IPC, notifications, OSD, lock and polkit are covered in the VM by `checks.omarchy-ux` section (10) since 2026-07-29, but multi-monitor lock, fingerprint dialog and panel interactions still need a real-hardware pass |
 
-### Arch `/etc` overlay (33 files)
+### Arch `/etc` overlay (37 files)
 
 Upstream's `etc/` tree (copied to `/etc` by the Arch ISO installer) is
 classified file-by-file in `pkgs/omarchy-etc-manifest.nix`, enforced
@@ -185,9 +185,10 @@ file fails the build until classified). Summary by class:
   `DefaultLimitNOFILE=65536:524288` both managers, docker log rotation
   (`logDriver=json-file` + `log-opts` 10m×5) + docker
   `DefaultDependencies=no`, plocate with `ConditionACPower=true`, USB
-  autosuspend off, sudo `passwd_tries=10` + NOPASSWD asdcontrol /
-  tzupdate / `timedatectl set-timezone`, cups-browsed
-  `CreateRemotePrinters Yes`, Plymouth + SDDM theme/wayland,
+  autosuspend off, sudo `passwd_tries=10` + NOPASSWD tzupdate /
+  `timedatectl set-timezone` (v4.0.1 removed upstream's NOPASSWD
+  asdcontrol grant; v4.0.2 tightened the timezone rule to a
+  `^`-anchored single-argument regex), Plymouth + SDDM theme/wayland,
   zswap-off tmpfiles rule.
 - **vendored** (`environment.etc` `.source` from the package):
   `systemd/oomd.conf.d/10-omarchy.conf`, `gnupg/dirmngr.conf`.
@@ -208,7 +209,13 @@ file fails the build until classified). Summary by class:
   `networking.networkmanager.dns = "systemd-resolved"` and restore
   `services.resolved.llmnr = "false"` + `extraConfig`
   (`MulticastDNS=no`, `DNSStubListenerExtra=172.17.0.1`) plus the
-  daemon.json pins.
+  daemon.json pins. v4.0.2 additions, also N/A: the four CUPS files
+  (`cups/cups-files.conf`, `cups/cups-browsed.conf`, the
+  `cups-browsed.service.d` drop-in, `sysusers.d/omarchy-cups-browsed.conf`
+  — upstream removed automatic printer discovery and the module sets
+  `services.printing.browsed.enable = false`) and the
+  `sudoers.d/omarchy-dns` / `omarchy-theme-browser` passwordless grants
+  (DNS and browser policy dirs are declarative here).
 
 ## When upstream updates
 
@@ -305,7 +312,8 @@ nix build .#checks.x86_64-linux.omarchy-skill
 Port relevant runtime guidance into `skills/omarchy/SKILL.md`, but keep
 Arch package management, fixed system paths, and source-development
 instructions out. Re-check upstream `omarchy-finalize-user` and upgrade
-scripts for additions to the four supported agent link paths (wired in
+scripts for additions to the six supported agent link paths (v4.0.1
+added `.gemini/config/skills` and `.hermes/skills`; wired in
 `modules/home-manager/default.nix`).
 
 **Upstream package list:**

@@ -13,7 +13,15 @@
 #   covered  — satisfied by an already-existing mechanism (see comment)
 #   na       — Arch-stack specific, no NixOS counterpart (reason in comment)
 {
-  "cups/cups-browsed.conf" = "native"; # services.printing.browsedConf (CreateRemotePrinters Yes)
+  # v4.0.2: upstream hardened the CUPS account separation and then removed
+  # automatic printer discovery entirely (migration 1788009111 drops
+  # cups-browsed). NixOS matches: services.printing stays on, browsed is
+  # disabled in the module. The cups-browsed.conf contents changed to a
+  # CacheDir/Driverless-only setup for the day upstream re-enables it.
+  "cups/cups-browsed.conf" = "na";
+  "cups/cups-files.conf" = "na"; # dedicated cups-browsed account (User/Group 209, SystemGroup cups-browsed) — nixpkgs CUPS unit owns its user natively
+  "sysusers.d/omarchy-cups-browsed.conf" = "na"; # systemd-sysusers for the Arch cups-browsed account; users.users is declarative on NixOS
+  "systemd/system/cups-browsed.service.d/10-omarchy.conf" = "na"; # Arch cups-browsed unit override; service not shipped (discovery removed)
   "docker/daemon.json" = "native"; # virtualisation.docker.daemon.settings — log rotation only; dns/bip pins deliberately dropped (no resolved bridge integration on NixOS)
   "fastfetch/config.jsonc" = "seed"; # HM seed ~/.config/fastfetch/config.jsonc
   "gnupg/dirmngr.conf" = "vendored"; # environment.etc."gnupg/dirmngr.conf"
@@ -29,9 +37,13 @@
   "sddm.conf.d/10-theme.conf" = "native"; # services.displayManager.sddm.theme
   "sddm.conf.d/10-wayland.conf" = "native"; # sddm.wayland.enable + Wayland.CompositorCommand
   "security/faillock.conf" = "covered"; # deny=10 passed inline in security.pam.services.omarchy-lock-password
-  "sudoers.d/omarchy-asdcontrol" = "native"; # security.sudo.extraRules (NOPASSWD asdcontrol, profile path)
+  # v4.0.1 removed sudoers.d/omarchy-asdcontrol (df819a6f closed the
+  # passwordless path to root): upstream's brightness script now uses plain
+  # `sudo asdcontrol` and takes the prompt. Same on NixOS.
   "sudoers.d/omarchy-passwd-tries" = "native"; # security.sudo.extraConfig (passwd_tries=10)
-  "sudoers.d/omarchy-tzupdate" = "native"; # security.sudo.extraRules (NOPASSWD tzupdate + timedatectl set-timezone)
+  "sudoers.d/omarchy-dns" = "na"; # passwordless omarchy-dns provider switch — DNS is declarative (omarchy-dns is a stub; services.resolved / networking.nameservers)
+  "sudoers.d/omarchy-theme-browser" = "na"; # passwordless browser-accent policy write — /etc browser policy dirs are module-owned on NixOS (omarchy-theme-set-browser is a no-op stub)
+  "sudoers.d/omarchy-tzupdate" = "native"; # security.sudo.extraRules (NOPASSWD timedatectl set-timezone, upstream's ^-anchored single-argument regex; port adds tzupdate)
   "sysctl.d/90-omarchy-file-watchers.conf" = "covered"; # nixpkgs config/sysctl.nix already ships the identical fs.inotify.max_user_watches=524288 mkDefault
   "sysctl.d/99-omarchy-sysctl.conf" = "native"; # boot.kernel.sysctl (zram-era VM tuning + tcp_mtu_probing)
   "systemd/logind.conf.d/10-ignore-power-button.conf" = "native"; # services.logind.settings.Login.HandlePowerKey = "ignore"

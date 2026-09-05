@@ -927,16 +927,20 @@
               throw "demo config missing user@ TimeoutStopSec=5s (etc/systemd/system/user@.service.d/10-faster-shutdown.conf)"
             else if demoCfg.virtualisation.docker.daemon.settings.log-driver != "json-file" then
               throw "demo config missing docker log rotation (etc/docker/daemon.json)"
-            else if !(hasSudoCmd "/run/current-system/sw/bin/asdcontrol") then
-              throw "demo config missing NOPASSWD asdcontrol (etc/sudoers.d/omarchy-asdcontrol)"
             else if !(hasSudoCmd "/run/current-system/sw/bin/tzupdate") then
-              throw "demo config missing NOPASSWD tzupdate (etc/sudoers.d/omarchy-tzupdate)"
-            else if !(hasSudoCmd "/run/current-system/sw/bin/timedatectl set-timezone *") then
-              throw "demo config missing NOPASSWD timedatectl set-timezone (etc/sudoers.d/omarchy-tzupdate)"
+              throw "demo config missing NOPASSWD tzupdate (port addition to etc/sudoers.d/omarchy-tzupdate)"
+            else if
+              !(hasSudoCmd "/run/current-system/sw/bin/timedatectl ^set-timezone [A-Za-z0-9_+][A-Za-z0-9_+.-]*(/[A-Za-z0-9_+][A-Za-z0-9_+.-]*)*$")
+            then
+              throw "demo config missing NOPASSWD timedatectl set-timezone regex (etc/sudoers.d/omarchy-tzupdate)"
+            else if hasSudoCmd "/run/current-system/sw/bin/asdcontrol" then
+              throw "demo config still grants NOPASSWD asdcontrol (upstream removed etc/sudoers.d/omarchy-asdcontrol in v4.0.1)"
             else if !(hasInfix "passwd_tries=10" demoCfg.security.sudo.extraConfig) then
               throw "demo config missing passwd_tries=10 (etc/sudoers.d/omarchy-passwd-tries)"
-            else if !(hasInfix "CreateRemotePrinters Yes" demoCfg.services.printing.browsedConf) then
-              throw "demo config missing CreateRemotePrinters Yes (etc/cups/cups-browsed.conf)"
+            else if demoCfg.services.printing.browsed.enable then
+              throw "demo config still enables cups-browsed (upstream removed automatic printer discovery in v4.0.2)"
+            else if !demoCfg.services.printing.enable then
+              throw "demo config missing services.printing.enable (CUPS itself stays on)"
             else if !(hasInfix "autosuspend=-1" demoCfg.boot.extraModprobeConfig) then
               throw "demo config missing usbcore autosuspend=-1 (etc/modprobe.d/omarchy-usb-autosuspend.conf)"
             else if (demoCfg.environment.etc."gnupg/dirmngr.conf".source or null) == null then
@@ -2132,6 +2136,100 @@ c";
                   echo "SUDO_EDITOR lost the ''${EDITOR} indirection in pam/environment"; exit 1; }
                 touch $out
               '';
+          # omarchy-nix-add writes raw nixpkgs attribute *paths* (including
+          # nested ones like kdePackages.dolphin) into omarchy-packages.json.
+          # The module must resolve dotted paths the same way catalog probes
+          # do (lib.attrByPath), not pkgs.${n} (a single top-level attr named
+          # with a literal dot). Regression: add + rebuild used to fail with
+          # "unknown nixpkgs attribute 'kdePackages.dolphin'" even though
+          # pkgs.kdePackages.dolphin exists.
+          omarchy-managed-nested-attrs =
+            let
+              inherit (pkgs) lib;
+              mkEval =
+                packages:
+                nixpkgs.lib.nixosSystem {
+                  inherit pkgs;
+                  modules = [
+                    self.nixosModules.default
+                    {
+                      omarchy.enable = true;
+                      omarchy.managedPackagesFile = builtins.toFile "omarchy-packages.json" (
+                        builtins.toJSON {
+                          inherit packages;
+                          features = [ ];
+                        }
+                      );
+                      fileSystems."/".device = "/dev/null";
+                      fileSystems."/".fsType = "ext4";
+                      boot.loader.grub.device = "nodev";
+                      system.stateVersion = "26.05";
+                    }
+                  ];
+                };
+              pkgIn =
+                needle: cfg: builtins.any (p: (p.drvPath or "") == needle.drvPath) cfg.environment.systemPackages;
+              good =
+                (mkEval [
+                  "hello"
+                  "kdePackages.dolphin"
+                ]).config;
+              missingNested = builtins.tryEval (
+                builtins.seq (builtins.concatStringsSep "" (
+                  map (p: p.drvPath or "")
+                    (mkEval [ "kdePackages.definitely-not-a-real-pkg-xyz" ]).config.environment.systemPackages
+                )) true
+              );
+              missingTop = builtins.tryEval (
+                builtins.seq (builtins.concatStringsSep "" (
+                  map (p: p.drvPath or "")
+                    (mkEval [ "definitely-not-a-real-attr-xyz" ]).config.environment.systemPackages
+                )) true
+              );
+            in
+            if !(pkgIn pkgs.hello good) then
+              throw "top-level managed attr 'hello' missing from environment.systemPackages"
+            else if !(pkgIn pkgs.kdePackages.dolphin good) then
+              throw "nested managed attr 'kdePackages.dolphin' missing from environment.systemPackages"
+            else if missingNested.success then
+              throw "unknown nested attr kdePackages.definitely-not-a-real-pkg-xyz should fail eval"
+            else if missingTop.success then
+              throw "unknown top-level attr definitely-not-a-real-attr-xyz should fail eval"
+            else
+              pkgs.runCommand "omarchy-managed-nested-attrs" { } "touch $out";
+          # omarchy-launch-browser and omarchy-launch-webapp resolve the
+          # default/chromium .desktop via a fixed brace list of data dirs.
+          # Arch has /usr/share/applications; NixOS puts system apps in
+          # /run/current-system/sw/share/applications. Both launchers must
+          # search that path — webapps used to drop the Exec= lookup, so
+          # uwsm-app treated --app=https://… as the application path.
+          omarchy-launch-desktop-glob =
+            let
+              omarchyPkg = self.packages.${system}.omarchy;
+              nixosGlob = "{~/.local,~/.nix-profile,/run/current-system/sw,/usr}/share/applications";
+              archGlob = "{~/.local,~/.nix-profile,/usr}/share/applications";
+            in
+            pkgs.runCommand "omarchy-launch-desktop-glob" { } ''
+              webapp=${omarchyPkg}/share/omarchy/bin/omarchy-launch-webapp
+              browser=${omarchyPkg}/share/omarchy/bin/omarchy-launch-browser
+              grep -Fq '${nixosGlob}' "$webapp" || {
+                echo "omarchy-launch-webapp missing NixOS applications glob" >&2
+                exit 1
+              }
+              grep -Fq '${nixosGlob}' "$browser" || {
+                echo "omarchy-launch-browser missing NixOS applications glob" >&2
+                exit 1
+              }
+              grep -Fq '${archGlob}' "$webapp" && {
+                echo "omarchy-launch-webapp still has the Arch-only applications glob" >&2
+                exit 1
+              }
+              grep -Fq '${archGlob}' "$browser" && {
+                echo "omarchy-launch-browser still has the Arch-only applications glob" >&2
+                exit 1
+              }
+              touch $out
+            '';
         }
       );
 

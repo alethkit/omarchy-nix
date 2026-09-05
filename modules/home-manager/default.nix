@@ -119,14 +119,17 @@ in
         # switch the consumer sets explicitly.
 
         # --- Class 0: agent skill links (managed on every activation) ---
-        # Upstream finalize-user creates these four links once. On Arch their
-        # target is the stable /usr/share path, but on NixOS OMARCHY_PATH is a
-        # generation-specific store path. A one-shot link therefore keeps the
-        # old package after an update and eventually becomes dangling after
-        # garbage collection. Home Manager owns the same upstream paths and
-        # refreshes them to the active package at every switch.
+        # Upstream finalize-user creates these six links once (v4.0.1 added
+        # .gemini/config/skills and .hermes/skills; hermes per-profile skill
+        # dirs are covered by migration 1787843905, which runs as user-safe).
+        # On Arch their target is the stable /usr/share path, but on NixOS
+        # OMARCHY_PATH is a generation-specific store path. A one-shot link
+        # therefore keeps the old package after an update and eventually
+        # becomes dangling after garbage collection. Home Manager owns the
+        # same upstream paths and refreshes them to the active package at
+        # every switch.
         #
-        # Create all four agent skill dirs unconditionally (not gated on which
+        # Create all six agent skill dirs unconditionally (not gated on which
         # agents the user has installed) so the links match upstream finalize-user.
         #
         # Real files/dirs at these paths are relocated before linkGeneration
@@ -141,7 +144,9 @@ in
             .agents/skills/omarchy \
             .claude/skills/omarchy \
             .codex/skills/omarchy \
-            .pi/agent/skills/omarchy
+            .pi/agent/skills/omarchy \
+            .gemini/config/skills/omarchy \
+            .hermes/skills/omarchy
           do
             omarchy_skill_target="$HOME/$omarchy_skill_rel"
             # -e is false for a dangling symlink; -L catches those too, but we
@@ -161,6 +166,8 @@ in
               ".claude/skills/omarchy"
               ".codex/skills/omarchy"
               ".pi/agent/skills/omarchy"
+              ".gemini/config/skills/omarchy"
+              ".hermes/skills/omarchy"
             ]
             (_: {
               source = effSkill;
