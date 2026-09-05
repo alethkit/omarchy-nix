@@ -7,7 +7,7 @@ Omarchy is DHH's opinionated Linux desktop. As of Quattro, its "desktop" is a
 single [quickshell](https://quickshell.org) process: the bar, launcher,
 menus, notifications, OSDs, control panels, lock screen, and polkit agent are
 all plugins of one long-running shell. It is driven by a Lua-based Hyprland
-config (≥0.56) and ~383 `omarchy-*` bash scripts, themed by a TOML + template
+config (≥0.56) and ~444 `omarchy-*` bash scripts, themed by a TOML + template
 engine.
 
 This project ports that to NixOS **by vendoring upstream**, not by
@@ -17,14 +17,15 @@ the desktop you get is the real Omarchy desktop, not a reimplementation.
 
 ## Status
 
-**Feature-complete desktop parity, verified behaviorally.** As of
-2026-07-28 the port reproduces the real Omarchy desktop: Hyprland
-session via uwsm, quickshell bar/menus, Super+Enter terminal, theme
-switching with live colors (not just wallpaper), editable user configs,
-first-run hooks, the full upstream package set (including the 11
-upstream-owned packages absent from nixpkgs, packaged under `pkgs/`),
-and a NixOS-native `omarchy update` flow. All of it was verified in a
-running session on real Intel GPU hardware, not inferred from processes.
+**Feature-complete desktop parity, verified behaviorally.** The port
+reproduces the real Omarchy desktop: Hyprland session via uwsm,
+quickshell bar/menus, Super+Enter terminal, theme switching with live
+colors (not just wallpaper), editable user configs, first-run hooks, the
+full upstream package set (including the 13 upstream-owned packages
+absent from nixpkgs, packaged under `pkgs/`), and a NixOS-native
+`omarchy update` flow. Verified in a running session on real Intel GPU
+hardware (2026-07-28), and re-verified on every bump since by the
+automated acceptance suite.
 
 Automated NixOS tests run under `nix flake check`:
 `checks.omarchy-desktop` (stack comes up), `checks.omarchy-ux`
@@ -48,13 +49,35 @@ graphics-stack issue, not an omarchy-nix bug: the same config runs
 GPU-passthrough VM for desktop exploration; use the VM only for
 module/build verification.
 
+## Changelog
+
+- **2026-09-05** — upstream `v4.0.2` (v4.0.1 + v4.0.2, 240 commits): the
+  security wave — sshd/Plymouth/CUPS/Windows-VM hardening, notification
+  click actions run as argv (no shell strings), passwordless-root sudoers
+  grants removed (asdcontrol), automatic printer discovery dropped — plus
+  the Hermes agent, Antigravity replacing Gemini, webp theme backgrounds,
+  and `vi` as a standard editor. First community contributions landed
+  (ported from the mirror with authorship preserved): nested nixpkgs attr
+  paths in `omarchy-packages.json` (`kdePackages.dolphin`), NixOS
+  application dirs in `omarchy-launch-webapp`, and NetworkManager ordered
+  before the graphical session.
+- **2026-08-18** — upstream `v4.0.0` (+33 fixes): script renames
+  (`setup-*` → `apply-*`, `finalize-user` → `provision-user`,
+  `launch-agent` → `agent`), the agent skill moved to
+  `default/agents/skills/`, new upstream-owned binaries `ttfx` (Rust TTE
+  port) and `herdr` (Zig+Rust) packaged, 27 migrations classified.
+- **2026-07-28** — behavioral-parity milestone: the full desktop verified
+  on real hardware; the VM acceptance suite (`checks.omarchy-ux`) green.
+
+Per-bump detail and full history: [`docs/MAINTAINERS.md`](docs/MAINTAINERS.md).
+
 ## Design rule
 
 **Ship the real Omarchy desktop on NixOS: vendor upstream, do not rewrite it.**
 
 The running desktop is produced by the same code that produces it on Arch
 Omarchy: the same quickshell process (`$OMARCHY_PATH/shell/shell.qml`), the
-same Hyprland Lua config chain, the same ~383 `omarchy-*` bash scripts, the
+same Hyprland Lua config chain, the same ~444 `omarchy-*` bash scripts, the
 same TOML + sed theme engine. The NixOS layer is glue (a vendoring
 derivation, two modules, options, activation), not a reimplementation.
 
@@ -212,10 +235,10 @@ with diagnostics rather than falling back to another checkout.
 System (NixOS module): the vendored upstream tree on the system profile
 with `OMARCHY_PATH` set as a session variable, the full upstream default
 package set from nixpkgs (foot, neovim, btop, lazygit, chromium, nautilus,
-libreoffice, obs-studio, kdenlive, dev toolchains, fonts, …) plus the 11
+libreoffice, obs-studio, kdenlive, dev toolchains, fonts, …) plus the 13
 upstream-owned packages packaged by this flake (aether, omacut, omawrite,
 omacalc, tensaku, try, asdcontrol, yaru-theme, hyprland-guiutils,
-hyprland-preview-share-picker, omarchy-nvim), the parity services
+hyprland-preview-share-picker, omarchy-nvim, herdr, ttfx), the parity services
 (avahi, printing, docker, gnome-keyring, fwupd, udiskie, …, all
 `mkDefault`), a uwsm-managed Hyprland session (≥0.56 for the
 Lua config), default SDDM, PipeWire/NetworkManager/Bluetooth daemons, the
@@ -229,8 +252,9 @@ omarchy-nvim LazyVim starter (`~/.config/nvim`), and the default theme
 rendered into `~/.local/state/omarchy/current/theme`, all as mutable
 copies: user edits (and upstream tooling writes, e.g. theme switches)
 survive rebuilds. It also keeps the package-owned `omarchy` agent skill
-linked into Agents, Claude, Codex, and Pi on every activation, so links
-follow the active Nix store generation after updates. Real, user-owned
+linked into Agents, Claude, Codex, Pi, Gemini, and Hermes on every
+activation, so links follow the active Nix store generation after
+updates. Real, user-owned
 files or directories at those link paths are never overwritten:
 activation moves them aside to `<path>.hm-backup-<timestamp>` first
 (existing symlinks are simply adopted).
@@ -285,12 +309,12 @@ limitations.
 ```
 flake.nix              # inputs + outputs (packages, modules, checks, configs)
 config.nix             # omarchy.* option schema
-pkgs/                  # vendoring + themes + 11 upstream-owned packages:
+pkgs/                  # vendoring + themes + 13 upstream-owned packages:
   omarchy.nix          #   the upstream tree -> $out/share/omarchy
   plymouth-omarchy-theme.nix sddm-omarchy-theme.nix yaru-theme.nix
   aether.nix asdcontrol.nix omacalc.nix omacut.nix omawrite.nix tensaku.nix
   try.nix hyprland-guiutils.nix hyprland-preview-share-picker.nix
-  omarchy-nvim.nix omarchy-fish.nix
+  omarchy-nvim.nix omarchy-fish.nix ttfx.nix herdr.nix
   omarchy-catalog.nix  #   Install/Remove menu catalog (nix-catalog.json)
   omarchy-migrations.nix + migrations-nix/  # migration classes + NixOS adapters
   omarchy-etc-manifest.nix omarchy-runtime-manifest.nix  # fail-closed manifests
@@ -299,7 +323,8 @@ modules/home-manager/  # HM module: per-user config seeds (mutable)
 skills/omarchy/        # NixOS-native end-user agent skill (packaged + linked by HM)
 tests/                 # desktop.nix (stack) + ux.nix (behavioral) + fish.nix
 example/               # demo consumer flake
-docs/                  # install.md, options.md, UPSTREAM.md, vm.md, nix-best-practices.md
+docs/                  # MAINTAINERS.md (changelog hub), install.md, options.md,
+                       # UPSTREAM.md, vm.md, nix-best-practices.md
 ```
 
 ## Updating upstream

@@ -25,7 +25,7 @@ repo:
 - **Lua-based Hyprland config (≥0.56).** `~/.config/hypr/hyprland.lua`
   `dofile`s `$OMARCHY_PATH/default/hypr/bootstrap.lua`, then `require()s
   default.hypr.omarchy` (defaults) + `hypr.*` (user overrides).
-- **~383 `omarchy-*` bash scripts** in `bin/` do everything. Dispatched
+- **~444 `omarchy-*` bash scripts** in `bin/` do everything. Dispatched
   via the `omarchy` router or called bare from PATH.
 - **TOML + sed template theme engine.** `omarchy-theme-set` copies a
   theme's `colors.toml` into a staging dir, runs
