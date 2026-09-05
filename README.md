@@ -339,6 +339,35 @@ requires. One revision, one commit. Follow the full bump checklist in
 [`docs/UPSTREAM.md`](docs/UPSTREAM.md); `--replace-fail` patches fail
 loudly when upstream shifts under them.
 
+## Contributing
+
+This GitHub repository is the project's **public home**. Development
+happens in a separate canonical repository (protected `main`; every
+change lands through a PR that must pass CI, including the VM acceptance
+tests). After each merge, a squashed snapshot of `main` is published
+here — so this mirror's history carries no individual commits or merge
+points, and PRs cannot be merged directly on GitHub (the next snapshot
+publish would orphan the merge).
+
+**PRs from outside contributors are welcome anyway.** A PR opened here is
+**ported to the canonical repository with authorship preserved** — your
+commit, your author line, plus a "Ported from mirror PR #N" trailer —
+goes through the same CI, and merges like any other PR; the mirror PR is
+then closed with a pointer to the landed change. The changelog above and
+the credits below record such contributions.
+
+Contributions landed so far:
+
+- **[@madebydamo](https://github.com/madebydamo)** — resolving nested
+  nixpkgs attribute paths from `omarchy-packages.json`
+  ([#2](https://github.com/zicochaos/omarchy-nix/pull/2)) and searching
+  NixOS application dirs in `omarchy-launch-webapp`
+  ([#3](https://github.com/zicochaos/omarchy-nix/pull/3))
+- **[@VirtualMachinist](https://github.com/VirtualMachinist)** — ordering
+  NetworkManager before the graphical session, fixing the quickshell
+  network-panel race at session start
+  ([#4](https://github.com/zicochaos/omarchy-nix/pull/4))
+
 ## License
 
 MIT, same as upstream Omarchy (upstream copyright: David Heinemeier
