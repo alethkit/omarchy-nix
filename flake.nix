@@ -1941,10 +1941,27 @@ c";
 
               # Quattro bash-parity helpers (PR omacom-io/omarchy-fish#7,
               # currently via the fork pin — see pkgs/omarchy-fish.nix).
-              for fn in cy mup rsw lsw dsw tds; do
+              for fn in a h cy mup rsw lsw dsw tds \
+                hdl hds hdlm hsl _herdr_ratio _herdr_split \
+                ssh _ssh_disarm _ssh_interactive; do
                 [ -e "share/fish/vendor_functions.d/$fn.fish" ] ||
                   fail "missing $fn.fish (bash-parity helper)"
               done
+
+              # Agent-shortcut drift guard: the helper NAMES above are also
+              # covered by omarchy-fish-parity, but a flag change upstream
+              # (e.g. cx bypassPermissions -> auto on 2026-08-15) keeps the
+              # name while changing behavior — pin the current flags.
+              grep -q 'omarchy-agent --inline' share/fish/vendor_functions.d/a.fish ||
+                fail "a.fish lost the omarchy-agent --inline invocation"
+              grep -q -- '--auto' share/fish/vendor_functions.d/c.fish ||
+                fail "c.fish lost opencode --auto"
+              grep -q -- '--permission-mode auto' share/fish/vendor_functions.d/cx.fish ||
+                fail "cx.fish no longer uses --permission-mode auto"
+              grep -q -- '--approve-for-me' share/fish/vendor_functions.d/cy.fish ||
+                fail "cy.fish no longer uses codex --approve-for-me"
+              grep -q 'SHELL=(command -v fish)' share/fish/vendor_functions.d/ff.fish ||
+                fail "ff.fish lost the fish SHELL pin for the fzf preview"
 
               # try.fish ships again: PR #7 replaced the v1.5.0 version
               # (/usr/bin/try, /usr/bin/env ruby, pacman hint — B24) with a
@@ -1992,24 +2009,10 @@ c";
               #     fish itself has no builtin ".." — upstream fish-profile
               #     gap, not a port deviation. Remove from this list if
               #     omarchy-fish ever adds ...fish (the ".." function file).
-              # v4.0.0 bash additions not yet in the pinned omarchy-fish
-              # fork: herdr helpers (h, hdl, hdlm, hds, hsl, _herdr_ratio,
-              # _herdr_split) and the ssh wrapper set (_ssh_disarm,
-              # _ssh_interactive, ssh) — drop entries as the fork picks
-              # them up (same rule as the "a" alias).
-              expectedMissing = [
-                ".."
-                "h"
-                "hdl"
-                "hdlm"
-                "hds"
-                "hsl"
-                "_herdr_ratio"
-                "_herdr_split"
-                "_ssh_disarm"
-                "_ssh_interactive"
-                "ssh"
-              ];
+              # The fork pin (PR omacom-io/omarchy-fish#7) carries the rest
+              # of the Quattro helper set: a/c/cx/cy agent shortcuts, the
+              # herdr family, and the ssh reconnect wrappers.
+              expectedMissing = [ ".." ];
             in
             pkgs.runCommand "omarchy-fish-parity-check" { } ''
               set -euo pipefail

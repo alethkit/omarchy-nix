@@ -7,7 +7,8 @@
 # runtime behavior end to end:
 #   - fish is the login shell; the vendor_* dirs land in the system profile;
 #   - an interactive fish session sees the omarchy functions (including the
-#     Quattro bash-parity helpers cy/mup/rsw/lsw/dsw/tds), the omarchy
+#     Quattro bash-parity helper set: agent shortcuts a/c/cx/cy, the herdr
+#     family, the ssh reconnect wrappers), the omarchy
 #     completion is registered, and EDITOR/SUDO_EDITOR arrive via PAM
 #     (environment.sessionVariables -> /etc/pam/environment -> pam_env);
 #   - user functions in ~/.config/fish/functions override the vendor copies
@@ -89,7 +90,12 @@
     # --- (1) Login shell + vendor dirs in the system profile. --------------
     shell = machine.succeed("getent passwd demo").strip().split(":")[-1]
     assert shell.endswith("/bin/fish"), "demo login shell is not fish: %r" % shell
-    for fn in ["cy", "mup", "rsw", "lsw", "dsw", "tds", "try"]:
+    for fn in [
+        "cy", "mup", "rsw", "lsw", "dsw", "tds", "try",
+        "a", "h", "hdl", "hds", "hdlm", "hsl",
+        "_herdr_ratio", "_herdr_split",
+        "ssh", "_ssh_disarm", "_ssh_interactive",
+    ]:
         machine.succeed(
             "test -e /run/current-system/sw/share/fish/vendor_functions.d/%s.fish" % fn
         )
@@ -98,7 +104,7 @@
 
     # --- (2) Interactive session: functions, EDITOR, completion. -----------
     out = machine.succeed(
-        as_demo("fish -ic \"functions -q cy mup rsw lsw dsw tds; and echo FUNCTIONS-OK\"")
+        as_demo("fish -ic \"functions -q cy mup rsw lsw dsw tds a h hdl hds hdlm hsl ssh _ssh_disarm _ssh_interactive; and echo FUNCTIONS-OK\"")
     )
     assert "FUNCTIONS-OK" in out, "omarchy fish functions not visible: %r" % out
 
@@ -158,8 +164,9 @@
 
     # --- (5) External binaries the vendored functions call. ----------------
     # parted (format-drive), rsync+ssh (rsw watchers), inotifywait+setsid
-    # (rsw watcher loop), scp (sff), file+bat (ff preview branches).
-    for binary in ["parted", "rsync", "inotifywait", "setsid", "ssh", "scp", "file", "bat"]:
+    # (rsw watcher loop), scp (sff), file+bat (ff preview branches),
+    # jq (_herdr_split parses herdr's JSON responses).
+    for binary in ["parted", "rsync", "inotifywait", "setsid", "ssh", "scp", "file", "bat", "jq"]:
         machine.succeed("command -v " + binary)
   '';
 }

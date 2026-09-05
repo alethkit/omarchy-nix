@@ -3,11 +3,13 @@
 #
 # Pin: temporarily the zicochaos/omarchy-fish fork rev carrying PR
 # omacom-io/omarchy-fish#7 (Quattro bash parity: cy/mup/rsw/lsw/dsw/tds
-# helpers, cx alignment, ff Kitty branch, ~/.local/bin in PATH, lazy
-# `try init`, the `# omarchy:args=` completion contract, zoxide cd
-# history fix). Upstream merge latency is high (their PR #6 has waited
-# since 2026-05), so the pin tracks the fork until an upstream release
-# contains PR #7 — see docs/decisions/2026-07-31-fish-parity-fork-pin.md.
+# helpers, agent-shortcut alignment — a/c/cx/cy — the herdr family
+# h/hdl/hds/hdlm/hsl, the ssh reconnect wrappers, ff Kitty branch,
+# ~/.local/bin in PATH, lazy `try init`, the `# omarchy:args=` completion
+# contract, zoxide cd history fix). Upstream merge latency is high (their
+# PR #6 has waited since 2026-05), so the pin tracks the fork until an
+# upstream release contains PR #7 — see
+# docs/decisions/2026-07-31-fish-parity-fork-pin.md.
 #
 # Layout mirrors the canonical PKGBUILD
 # (omacom-io/omarchy-pkgs/pkgbuilds/omarchy-fish): conf.d/functions/
@@ -26,17 +28,16 @@
   stdenvNoCC,
   fetchFromGitHub,
   writeShellScript,
-  writeText,
 }:
 
 let
-  version = "1.5.0-unstable-2026-07-31";
+  version = "1.5.0-unstable-2026-09-05";
 
   src = fetchFromGitHub {
     owner = "zicochaos";
     repo = "omarchy-fish";
-    rev = "07fc8da701df1f8ec3ba6c2ef75119e14c4a16f7";
-    hash = "sha256-nwSkPlumpBhvY1GZWtXRWaVXnDVftaPGIceO7AMEg3M=";
+    rev = "b1c8639a00a183be168c59a77bb6db95db1e6777";
+    hash = "sha256-eFPlT9+IPVA1DGsJlk3+dapVpKyjfDW8bKxVEuHRKPg=";
   };
 
   # Same fzf.fish revision the canonical PKGBUILD bundles.
@@ -68,17 +69,6 @@ let
     share/fish/vendor_* directories; nothing is copied to ~/.config/fish,
     and functions in ~/.config/fish/functions override the vendor ones.
     EOF
-  '';
-
-  # Bash parity gap filler: Quattro's bash profile gained
-  # `alias a='omarchy-agent --inline'` (default coding agent; renamed from
-  # omarchy-launch-agent in v4.0.0) after the pinned fork rev. Port-level
-  # supplement until the fork picks it up — drop this file when the pin
-  # advances past the fix.
-  agentAliasFn = writeText "a.fish" ''
-    function a --wraps omarchy-agent --description 'Launch the default coding agent inline'
-        omarchy-agent --inline $argv
-    end
   '';
 in
 stdenvNoCC.mkDerivation {
@@ -114,9 +104,6 @@ stdenvNoCC.mkDerivation {
 
     # NixOS informational stub replaces upstream's mutating setup script.
     install -Dm755 "${setupStub}" "$out/bin/omarchy-setup-fish"
-
-    # Port-level bash-parity supplement (see agentAliasFn in let).
-    install -m644 "${agentAliasFn}" "$out/share/fish/vendor_functions.d/a.fish"
 
     runHook postInstall
   '';

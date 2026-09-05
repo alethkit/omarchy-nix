@@ -54,7 +54,7 @@ stubs). Set automatically by the flake; `null` skips nvim config seeding.
 ### `omarchy.fish.enable` *(bool, default `false`)*
 
 Install Fish and the vendored Omarchy Fish profile (`omarchy-fish`, pinned
-`1.5.0-unstable-2026-07-31` — the fork rev carrying
+`1.5.0-unstable-2026-09-05` — the fork rev carrying
 [omacom-io/omarchy-fish#7](https://github.com/omacom-io/omarchy-fish/pull/7)
 — + fzf.fish v10.3): sets `programs.fish.enable` and adds the package
 to the system profile, whose `share/fish/vendor_*` directories Fish reads
