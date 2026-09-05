@@ -358,15 +358,15 @@ the credits below record such contributions.
 
 Contributions landed so far:
 
-- **[@madebydamo](https://github.com/madebydamo)** — resolving nested
-  nixpkgs attribute paths from `omarchy-packages.json`
-  ([#2](https://github.com/zicochaos/omarchy-nix/pull/2)) and searching
-  NixOS application dirs in `omarchy-launch-webapp`
-  ([#3](https://github.com/zicochaos/omarchy-nix/pull/3))
-- **[@VirtualMachinist](https://github.com/VirtualMachinist)** — ordering
-  NetworkManager before the graphical session, fixing the quickshell
-  network-panel race at session start
-  ([#4](https://github.com/zicochaos/omarchy-nix/pull/4))
+<!-- Rendered as an explicit table (avatars resolve from GitHub profile
+     URLs): GitHub's native "Contributors" list counts committers on the
+     default branch, and this mirror only receives squash snapshots
+     published under one identity — ported authors would never appear
+     there. -->
+| Contributor | Landed contributions |
+| --- | --- |
+| <a href="https://github.com/madebydamo"><img src="https://github.com/madebydamo.png" width="44" valign="middle" alt="@madebydamo" /></a> **[@madebydamo](https://github.com/madebydamo)** | Resolving nested nixpkgs attribute paths from `omarchy-packages.json` ([#2](https://github.com/zicochaos/omarchy-nix/pull/2)); searching NixOS application dirs in `omarchy-launch-webapp` ([#3](https://github.com/zicochaos/omarchy-nix/pull/3)) |
+| <a href="https://github.com/VirtualMachinist"><img src="https://github.com/VirtualMachinist.png" width="44" valign="middle" alt="@VirtualMachinist" /></a> **[@VirtualMachinist](https://github.com/VirtualMachinist)** | Ordering NetworkManager before the graphical session, fixing the quickshell network-panel race at session start ([#4](https://github.com/zicochaos/omarchy-nix/pull/4)) |
 
 ## License
 
