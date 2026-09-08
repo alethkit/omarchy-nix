@@ -1,0 +1,134 @@
+diff --git a/flake.nix b/flake.nix
+index 193b2ea..0000000 100644
+--- a/flake.nix
++++ b/flake.nix
+@@ -48,10 +48,9 @@
+       home-manager,
+       ...
+     }:
+     let
+-      # x86_64-only for now: the checks do not pass evaluation on aarch64
+-      # (hardware.graphics.enable32Bit is x86_64-only), so advertising the
+-      # arch was broken-by-declaration. Re-add when the checks evaluate
+-      # there (tracked on the dev tracker).
+-      systems = [ "x86_64-linux" ];
++      # The desktop/package layer is architecture-neutral. Keep the full
++      # behavioral VM suite on x86_64 for now (it deliberately exercises
++      # Steam/32-bit graphics), while ARM gets package + NixOS build coverage.
++      systems = [ "x86_64-linux" "aarch64-linux" ];
+       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system);
+@@ -169,6 +168,7 @@
+               # clear message instead of "attribute '…' missing" on self.packages.
+               hostSystem = pkgs.stdenv.hostPlatform.system;
+               hostPackages =
+-                self.packages.${hostSystem} or (throw "omarchy-nix supports x86_64-linux only (got ${hostSystem})");
++                self.packages.${hostSystem}
++                  or (throw "omarchy-nix supports x86_64-linux and aarch64-linux only (got ${hostSystem})");
+             in
+             lib.mkMerge [
+@@ -260,8 +260,20 @@
+               omarchy = self;
+               home-manager = inputs.home-manager;
+             };
+         in
+-        {
++        if system == "aarch64-linux" then
++          {
++            # ARM64 smoke coverage.  Do not run the x86 UX fixture here yet:
++            # that fixture intentionally enables Steam, whose NixOS module
++            # requires x86-only 32-bit graphics support.  Building the real
++            # reference consumer still exercises the Omarchy module, the full
++            # default package set, the vendored upstream tree, Hyprland, and
++            # all locally packaged Omarchy applications on aarch64.
++            omarchy-package = self.packages.${system}.omarchy;
++            omarchy-example =
++              self.nixosConfigurations."example-aarch64".config.system.build.toplevel;
++          }
++        else {
+           omarchy-desktop = pkgs.testers.nixosTest (loadTest ./tests/desktop.nix);
+           # UX/acceptance test: exercises real user behavior (Super+Enter ->
+           # foot, session env, default browser, cursor, first-run, systemd user
+@@ -2570,6 +2582,19 @@
+             }
+           ];
+         };
++
++        # Same public reference consumer, evaluated natively for ARM64.  This
++        # is also used by checks.aarch64-linux.omarchy-example so ARM support
++        # cannot regress to "advertised but does not evaluate/build".
++        example-aarch64 = nixpkgs.lib.nixosSystem {
++          system = "aarch64-linux";
++          modules = [
++            ./example/configuration.nix
++            self.nixosModules.default
++            inputs.home-manager.nixosModules.home-manager
++            { home-manager.sharedModules = [ self.homeManagerModules.default ]; }
++          ];
++        };
+       }
+       # Optional extra nixosConfigurations, spliced in only when the file
+       # exists.
+diff --git a/modules/nixos/default.nix b/modules/nixos/default.nix
+index 3dc13d2..0000000 100644
+--- a/modules/nixos/default.nix
++++ b/modules/nixos/default.nix
+@@ -111,8 +111,17 @@ let
+   # NixOS-native analogue of what upstream install scripts wire by hand.
+   # mkDefault so a consumer's own explicit config wins.
+   managedFeatureDefs = {
+     steam = {
+-      programs.steam.enable = lib.mkDefault true;
++      # Steam in nixpkgs/NixOS is an x86_64 feature and enables the x86-only
++      # 32-bit graphics stack.  Keep the catalog entry (important for Omarchy
++      # parity), but fail with an intentional message instead of leaking an
++      # unrelated hardware.graphics.enable32Bit evaluation error on ARM.
++      programs.steam.enable =
++        lib.mkDefault (pkgs.stdenv.hostPlatform.system == "x86_64-linux");
++      assertions = [{
++        assertion = pkgs.stdenv.hostPlatform.system == "x86_64-linux";
++        message = "Omarchy managed feature 'steam' is currently supported only on x86_64-linux";
++      }];
+     };
+     tailscale = {
+       services.tailscale.enable = lib.mkDefault true;
+diff --git a/README.md b/README.md
+index c1d6fb7..0000000 100644
+--- a/README.md
++++ b/README.md
+@@ -24,6 +24,13 @@ absent from nixpkgs, packaged under `pkgs/`), and a NixOS-native
+ `omarchy update` flow. Verified in a running session on real Intel GPU
+ hardware (2026-07-28). The automated acceptance suite checks the subset
+ described below on subsequent changes.
++
++Supported NixOS systems are `x86_64-linux` and `aarch64-linux`. The complete
++interactive/UX VM suite currently remains x86_64-only because its gaming
++fixture deliberately enables Steam (and therefore NixOS's x86-only 32-bit
++graphics stack). ARM64 has a native package + full reference-system build
++check. Selecting the managed Steam feature on ARM64 fails explicitly instead
++of surfacing the unrelated `hardware.graphics.enable32Bit` option error.
+
+ Automated NixOS tests run under `nix flake check`:
+ `checks.omarchy-desktop` (stack comes up), `checks.omarchy-ux`
+@@ -87,8 +93,8 @@ Add `omarchy-nix` to your flake inputs and import the NixOS + Home-Manager
+   };
+
+   outputs = { nixpkgs, omarchy-nix, home-manager, ... }: {
+     nixosConfigurations.my-host = nixpkgs.lib.nixosSystem {
+-      system = "x86_64-linux";
++      system = "x86_64-linux"; # or "aarch64-linux"
+       modules = [
+         ./configuration.nix
+         omarchy-nix.nixosModules.default
+diff --git a/example/configuration.nix b/example/configuration.nix
+index dad7fd9..0000000 100644
+--- a/example/configuration.nix
++++ b/example/configuration.nix
+@@ -6,7 +6,7 @@
+ # and sharing the omarchy HM module with all users) lives in your flake.nix:
+ #
+ #   nixosConfigurations.my-host = nixpkgs.lib.nixosSystem {
+-#     system = "x86_64-linux";
++#     system = "x86_64-linux"; # or "aarch64-linux"
+ #     modules = [
+ #       ./configuration.nix
+ #       omarchy-nix.nixosModules.default
