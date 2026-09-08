@@ -1216,6 +1216,15 @@
               stubSudo = pkgs.writeShellScript "stub-sudo" ''
                 if [[ ''${SUDO_CHMOD_WINDOW:-0} == 1 ]]; then
                   chmod -R u+w "$OMARCHY_NIX_FLAKE"
+                  if [[ -n ''${REBUILD_ROLLBACK_GATE:-} &&
+                        ''${REBUILD_LABEL:-} == rollback-first &&
+                        -e "$REBUILD_ROLLBACK_GATE/rebuild-failed" &&
+                        ! -e "$REBUILD_ROLLBACK_GATE/rollback-start" ]]; then
+                    : >"$REBUILD_ROLLBACK_GATE/rollback-start"
+                    while [[ ! -e "$REBUILD_ROLLBACK_GATE/rollback-release" ]]; do
+                      sleep 0.05
+                    done
+                  fi
                   "$@"
                   rc=$?
                   chmod 555 "$OMARCHY_NIX_FLAKE"
@@ -1228,10 +1237,35 @@
               # (a non-cooperating writer) and fails on demand.
               stubRebuild = pkgs.writeShellScript "stub-nixos-rebuild" ''
                 echo x >> "''${COUNT_FILE:?}"
+                if [[ -n ''${REBUILD_SERIAL_ROOT:-} ]]; then
+                  serial_root="$REBUILD_SERIAL_ROOT"
+                  mkdir -p "$serial_root"
+                  if ! mkdir "$serial_root/active" 2>/dev/null; then
+                    : >"$serial_root/overlap"
+                    exit 97
+                  fi
+                  label="''${REBUILD_LABEL:-unknown}"
+                  : >"$serial_root/entered-$label"
+                  cleanup() {
+                    rmdir "$serial_root/active" 2>/dev/null || true
+                  }
+                  trap cleanup EXIT
+                  if [[ -n ''${REBUILD_RELEASE_FILE:-} ]]; then
+                    while [[ ! -e "$REBUILD_RELEASE_FILE" ]]; do
+                      sleep 0.05
+                    done
+                  else
+                    sleep "''${REBUILD_SLEEP:-0}"
+                  fi
+                  : >"$serial_root/exited-$label"
+                fi
                 if [[ ''${REBUILD_SABOTAGE:-0} == 1 ]]; then
                   j="$OMARCHY_NIX_FLAKE/omarchy-packages.json"
                   ${pkgs.jq}/bin/jq '.packages = (((.packages // []) + ["sabotage-pkg"]) | unique)' "$j" >"$j.sabotage" \
                     && mv "$j.sabotage" "$j"
+                fi
+                if [[ ''${FAKE_REBUILD_RC:-0} != 0 && -n ''${REBUILD_ROLLBACK_GATE:-} ]]; then
+                  : >"$REBUILD_ROLLBACK_GATE/rebuild-failed"
                 fi
                 exit "''${FAKE_REBUILD_RC:-0}"
               '';
@@ -1241,6 +1275,9 @@
               # background index refresh does not hold the transaction lock.
               stubNix = pkgs.writeShellScript "stub-nix" ''
                 if [[ ''${NIX_STUB_SLOW:-0} == 1 && ''${1:-} == search ]]; then
+                  if [[ -n ''${NIX_STUB_SLOW_MARKER:-} ]]; then
+                    : >"$NIX_STUB_SLOW_MARKER"
+                  fi
                   sleep 5
                 fi
                 exit 0
@@ -1360,6 +1397,8 @@
                 # --- (f) root-owned flake dir works via the sudo path -----------
                 new_flake f
                 chmod 555 "$OMARCHY_NIX_FLAKE"
+                (exec 8<"$OMARCHY_NIX_FLAKE" && flock -n 8) ||
+                  fail "case f: read-only flake directory cannot be locked"
                 SUDO_CHMOD_WINDOW=1 omarchy-nix-add install.browser.firefox >/dev/null
                 [[ $(json_pkgs) == '["firefox"]' ]] || fail "case f: root-owned add"
                 SUDO_CHMOD_WINDOW=1 omarchy-nix-remove firefox >/dev/null
@@ -1400,10 +1439,19 @@
 
                 # --- (j) background index refresh never holds the lock ----------
                 new_flake j
-                NIX_STUB_SLOW=1 omarchy-nix-add install.browser.firefox >/dev/null
-                lockkey=$(printf '%s' "$OMARCHY_NIX_FLAKE/omarchy-packages.json" | sha256sum | cut -d' ' -f1)
-                flock -w 3 "$XDG_STATE_HOME/omarchy/nix-add/locks/$lockkey.lock" true ||
+                slow_marker=$TMPDIR/search-started
+                rm -f "$slow_marker"
+                NIX_STUB_SLOW=1 NIX_STUB_SLOW_MARKER="$slow_marker" \
+                  omarchy-nix-add install.browser.firefox >/dev/null
+                for attempt in $(seq 1 100); do
+                  [[ -e $slow_marker ]] && break
+                  sleep 0.05
+                done
+                [[ -e $slow_marker ]] || fail "case j: slow background refresh did not start"
+                exec 8<"$OMARCHY_NIX_FLAKE"
+                flock -w 3 8 ||
                   fail "case j: background index refresh still holds the transaction lock"
+                exec 8<&-
                 echo "case j (no lock leak to background) OK"
 
                 # --- (k) remove picker (fzf --multi, no args) -------------------
@@ -1422,6 +1470,120 @@
                 omarchy-nix-remove ghost-feature >/dev/null
                 [[ $(json_feats) == '[]' ]] || fail "case l: uncataloged feature not removable"
                 echo "case l (uncataloged feature remove) OK"
+
+                # --- (m) separate users/state dirs still serialize rebuilds ----
+                new_flake m
+                serial_root=$TMPDIR/serial-m
+                mkdir -p "$serial_root"
+                export REBUILD_SERIAL_ROOT=$serial_root
+                export REBUILD_RELEASE_FILE=$serial_root/release
+                XDG_STATE_HOME=$TMPDIR/state-m1 REBUILD_LABEL=first \
+                  omarchy-nix-add install.browser.firefox \
+                  >"$serial_root/first.log" 2>&1 &
+                first_pid=$!
+                for attempt in $(seq 1 100); do
+                  [[ -e $serial_root/entered-first ]] && break
+                  sleep 0.05
+                done
+                if [[ ! -e $serial_root/entered-first ]]; then
+                  : >"$REBUILD_RELEASE_FILE"
+                  kill "$first_pid" 2>/dev/null || true
+                  wait "$first_pid" 2>/dev/null || true
+                  fail "case m: first rebuild did not start"
+                fi
+                XDG_STATE_HOME=$TMPDIR/state-m2 REBUILD_LABEL=second \
+                  omarchy-nix-add mc \
+                  >"$serial_root/second.log" 2>&1 &
+                second_pid=$!
+                sleep 0.2
+                if [[ -e $serial_root/entered-second ]]; then
+                  : >"$REBUILD_RELEASE_FILE"
+                  wait "$first_pid" 2>/dev/null || true
+                  wait "$second_pid" 2>/dev/null || true
+                  fail "case m: different XDG_STATE_HOME values did not serialize"
+                fi
+                : >"$REBUILD_RELEASE_FILE"
+                if ! wait "$first_pid"; then
+                  fail "case m: first serialized rebuild failed"
+                fi
+                if ! wait "$second_pid"; then
+                  fail "case m: second serialized rebuild failed"
+                fi
+                [[ ! -e $serial_root/overlap ]] || fail "case m: rebuilds overlapped"
+                [[ $(json_pkgs) == '["firefox","mc"]' ]] ||
+                  fail "case m: serialized operations lost a package: $(json_pkgs)"
+                unset REBUILD_SERIAL_ROOT REBUILD_RELEASE_FILE
+                echo "case m (cross-state rebuild serialization) OK"
+
+                # --- (n) the same lock remains held through rollback -----------
+                new_flake n
+                printf '{"packages":[],"features":[]}' >"$OMARCHY_NIX_FLAKE/omarchy-packages.json"
+                chmod 555 "$OMARCHY_NIX_FLAKE"
+                serial_root=$TMPDIR/serial-n
+                mkdir -p "$serial_root"
+                export REBUILD_SERIAL_ROOT=$serial_root
+                export REBUILD_RELEASE_FILE=$serial_root/release
+                XDG_STATE_HOME=$TMPDIR/state-n1 REBUILD_LABEL=rollback-first \
+                  REBUILD_ROLLBACK_GATE=$serial_root SUDO_CHMOD_WINDOW=1 \
+                  FAKE_REBUILD_RC=1 omarchy-nix-add install.browser.firefox \
+                  >"$serial_root/first.log" 2>&1 &
+                first_pid=$!
+                for attempt in $(seq 1 100); do
+                  [[ -e $serial_root/entered-rollback-first ]] && break
+                  sleep 0.05
+                done
+                if [[ ! -e $serial_root/entered-rollback-first ]]; then
+                  : >"$REBUILD_RELEASE_FILE"
+                  kill "$first_pid" 2>/dev/null || true
+                  wait "$first_pid" 2>/dev/null || true
+                  chmod 755 "$OMARCHY_NIX_FLAKE"
+                  fail "case n: failing rebuild did not start"
+                fi
+                XDG_STATE_HOME=$TMPDIR/state-n2 REBUILD_LABEL=rollback-second \
+                  SUDO_CHMOD_WINDOW=1 omarchy-nix-add mc \
+                  >"$serial_root/second.log" 2>&1 &
+                second_pid=$!
+                sleep 0.2
+                if [[ -e $serial_root/entered-rollback-second ]]; then
+                  : >"$REBUILD_RELEASE_FILE"
+                  : >"$serial_root/rollback-release"
+                  wait "$first_pid" 2>/dev/null || true
+                  wait "$second_pid" 2>/dev/null || true
+                  chmod 755 "$OMARCHY_NIX_FLAKE"
+                  fail "case n: second rebuild entered before rollback"
+                fi
+                : >"$REBUILD_RELEASE_FILE"
+                for attempt in $(seq 1 100); do
+                  [[ -e $serial_root/rollback-start ]] && break
+                  sleep 0.05
+                done
+                [[ -e $serial_root/rollback-start ]] || {
+                  : >"$serial_root/rollback-release"
+                  wait "$first_pid" 2>/dev/null || true
+                  wait "$second_pid" 2>/dev/null || true
+                  chmod 755 "$OMARCHY_NIX_FLAKE"
+                  fail "case n: rollback did not start"
+                }
+                [[ ! -e $serial_root/entered-rollback-second ]] ||
+                  fail "case n: second rebuild entered during rollback"
+                : >"$serial_root/rollback-release"
+                if wait "$first_pid"; then
+                  chmod 755 "$OMARCHY_NIX_FLAKE"
+                  fail "case n: failing rebuild unexpectedly succeeded"
+                fi
+                if ! wait "$second_pid"; then
+                  chmod 755 "$OMARCHY_NIX_FLAKE"
+                  fail "case n: second rebuild after rollback failed"
+                fi
+                chmod 755 "$OMARCHY_NIX_FLAKE"
+                [[ ! -e $serial_root/overlap ]] || fail "case n: rebuilds overlapped"
+                [[ $(json_pkgs) == '["mc"]' ]] ||
+                  fail "case n: rollback lost the later mutation: $(json_pkgs)"
+                grep -q 'rollback: restored preimage' \
+                  "$TMPDIR/state-n1/omarchy/nix-add/"*.log ||
+                  fail "case n: rollback audit entry missing"
+                unset REBUILD_SERIAL_ROOT REBUILD_RELEASE_FILE
+                echo "case n (cross-state rollback serialization) OK"
 
                 # --- audit logs exist and are complete for a successful op ------
                 logf=$(grep -rl 'result: rebuild ok' "$XDG_STATE_HOME/omarchy/nix-add/" | head -1 || true)
@@ -2200,6 +2362,99 @@ c";
               throw "unknown top-level attr definitely-not-a-real-attr-xyz should fail eval"
             else
               pkgs.runCommand "omarchy-managed-nested-attrs" { } "touch $out";
+          # Execute the actual HM activation step with a deterministic XDG
+          # backend: a missing desktop session must not make this test pass
+          # merely because xdg-settings silently failed during activation.
+          omarchy-browser-default =
+            let
+              activation = pkgs.writeText "omarchy-browser-activation.sh" self.nixosConfigurations.demo.config.home-manager.users.demo.home.activation.omarchyDefaultBrowser.data;
+              xdgSettings = pkgs.writeShellScript "xdg-settings" ''
+                [[ ! -v BROWSER ]] || exit 90
+                case "$1:$2" in
+                  get:default-web-browser)
+                    [[ ''${BROWSER_QUERY_FAIL:-0} == 0 ]] || exit 1
+                    cat "$BROWSER_CHOICE"
+                    ;;
+                  set:default-web-browser)
+                    printf '%s\n' "$3" > "$BROWSER_CHOICE"
+                    echo set >> "$BROWSER_WRITES"
+                    ;;
+                  *) exit 91 ;;
+                esac
+              '';
+            in
+            pkgs.runCommand "omarchy-browser-default-check" { } ''
+              set -euo pipefail
+              mkdir -p "$TMPDIR/bin"
+              ln -s ${xdgSettings} "$TMPDIR/bin/xdg-settings"
+              export PATH="$TMPDIR/bin:$PATH"
+              export BROWSER=omarchy-launch-browser
+              export BROWSER_CHOICE="$TMPDIR/browser-choice"
+              export BROWSER_WRITES="$TMPDIR/browser-writes"
+              : > "$BROWSER_WRITES"
+
+              printf '%s\n' firefox.desktop > "$BROWSER_CHOICE"
+              bash ${activation}
+              test "$(cat "$BROWSER_CHOICE")" = firefox.desktop
+              test ! -s "$BROWSER_WRITES"
+
+              : > "$BROWSER_CHOICE"
+              bash ${activation}
+              test "$(cat "$BROWSER_CHOICE")" = chromium.desktop
+              test "$(wc -l < "$BROWSER_WRITES")" = 1
+              bash ${activation}
+              test "$(wc -l < "$BROWSER_WRITES")" = 1
+
+              BROWSER_QUERY_FAIL=1 bash ${activation}
+              test "$(wc -l < "$BROWSER_WRITES")" = 1
+              touch $out
+            '';
+
+          # Taildrop follows the effective Tailscale service setting, including
+          # menu-managed installation and an explicit consumer opt-out.
+          omarchy-taildrop =
+            let
+              mkConfig =
+                extra:
+                (nixpkgs.lib.nixosSystem {
+                  inherit pkgs;
+                  modules = [
+                    self.nixosModules.default
+                    {
+                      omarchy.enable = true;
+                      system.stateVersion = "26.05";
+                    }
+                    extra
+                  ];
+                }).config;
+              managed = {
+                omarchy.managedPackagesFile = builtins.toFile "taildrop-packages.json" (
+                  builtins.toJSON {
+                    packages = [ ];
+                    features = [ "tailscale" ];
+                  }
+                );
+              };
+              enabled = mkConfig managed;
+              disabled = mkConfig { };
+              overridden = mkConfig (managed // { services.tailscale.enable = false; });
+              noPackage = mkConfig {
+                services.tailscale.enable = true;
+                omarchy.package = null;
+              };
+              startsReceiver =
+                cfg:
+                builtins.elem "graphical-session.target" (
+                  cfg.systemd.user.services.omarchy-tailscale-receive.wantedBy or [ ]
+                );
+            in
+            assert enabled.services.tailscale.enable;
+            assert startsReceiver enabled;
+            assert !(startsReceiver disabled);
+            assert !(startsReceiver overridden);
+            assert !(startsReceiver noPackage);
+            pkgs.runCommand "omarchy-taildrop-check" { } "touch $out";
+
           # omarchy-launch-browser and omarchy-launch-webapp resolve the
           # default/chromium .desktop via a fixed brace list of data dirs.
           # Arch has /usr/share/applications; NixOS puts system apps in

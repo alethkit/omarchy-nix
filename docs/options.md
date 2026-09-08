@@ -184,6 +184,11 @@ and rollback-safe. `packages` entries are nixpkgs attribute paths: a
 top-level name (`"firefox"`) or a dotted nested path
 (`"kdePackages.dolphin"`). `null` disables menu-managed packages.
 
+The `tailscale` feature also enables Omarchy's Taildrop receiver for
+graphical sessions. Its activation follows `services.tailscale.enable`,
+so an explicit `false` disables the receiver even if the feature remains
+in the JSON. A vendored `omarchy.package` is required for this user unit.
+
 There is no filesystem auto-detection: flake evaluation is pure, so
 `builtins.pathExists` cannot see absolute paths outside the flake
 (`/etc/nixos/omarchy-packages.json` is invisible). Point this at the JSON

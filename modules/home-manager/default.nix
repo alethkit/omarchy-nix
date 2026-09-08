@@ -370,13 +370,17 @@ in
         #   env -u BROWSER xdg-settings set default-web-browser chromium.desktop
         # env -u BROWSER is required: xdg-settings refuses to write the
         # association when BROWSER is set (treats it as a higher-priority
-        # override). Idempotent — re-running just rewrites the same default.
-        # Fail soft: activation has no graphical session, and some xdg-utils
-        # backends need a DE; the || true keeps switch non-fatal. A later
-        # session-side oneshot (first-run) can reassert if needed.
+        # override). Initialize the association only when it is absent; a
+        # user's later browser choice must survive a home-manager switch. The
+        # first-run session path still runs the upstream command once behind
+        # its finalize-user marker.
         home.activation.omarchyDefaultBrowser = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
           if command -v xdg-settings >/dev/null 2>&1; then
-            env -u BROWSER xdg-settings set default-web-browser chromium.desktop >/dev/null 2>&1 || true
+            if omarchy_default_browser="$(env -u BROWSER xdg-settings get default-web-browser 2>/dev/null)"; then
+              if [ -z "$omarchy_default_browser" ]; then
+                env -u BROWSER xdg-settings set default-web-browser chromium.desktop >/dev/null 2>&1 || true
+              fi
+            fi
           fi
         '';
       }

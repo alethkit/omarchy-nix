@@ -153,7 +153,7 @@ parity:
 | **Hyprland package** | Arch `hyprland` package ( pacman) | `hyprland` flake input, self-contained build against its own nixpkgs | Needs ≥0.56 for the Lua config; stable nixpkgs only has 0.55.4. |
 | **Hyprland Cachix** | N/A (Arch builds from AUR/cache) | Auto-configured in module (`nix.settings.substituters`) | The flake Hyprland package isn't on cache.nixos.org; without this every consumer rebuilds Hyprland from source (OOMs small VMs). |
 | **Terminal default** | **foot** (`hyprland-xdg-terminals.list` → `foot.desktop`; ghostty opt-in) | foot in runtime deps; vendored list + `foot.desktop` installed to the package's `share/`; `/etc/xdg/hyprland-xdg-terminals.list` written from `omarchy.terminal` | The module-level list wins over the vendored fallback, so `omarchy.terminal = "ghostty"` re-points Super+Enter declaratively; an uninstalled choice degrades to foot. |
-| **Browser default** | **chromium** (set in `omarchy-provision-user` via `xdg-settings`) | **chromium**: in runtime deps; `BROWSER=omarchy-launch-browser` in session env; `chromium-browser.desktop` aliased to `chromium.desktop`; `xdg-settings` runs in finalize-user + HM activation | NixOS names the desktop file `chromium-browser.desktop`; upstream tooling expects `chromium.desktop`. |
+| **Browser default** | **chromium** (set once in `omarchy-provision-user` via `xdg-settings`) | **chromium**: in runtime deps; `BROWSER=omarchy-launch-browser` in interactive shells only; `chromium-browser.desktop` aliased to `chromium.desktop`; HM initializes only an absent association and preserves later user choices | NixOS names the desktop file `chromium-browser.desktop`; upstream tooling expects `chromium.desktop`. |
 | **Cursor** | no theme (only `XCURSOR_SIZE`/`HYPRCURSOR_SIZE`=24; Adwaita cursors arrive via `gnome-themes-extra` on Arch) | `adwaita-icon-theme` in runtime deps + a `default → Adwaita` fallback package (`xcursor-default-adwaita`) | Upstream sets no theme NAME, so libxcursor resolves theme "default"; the fallback's `icons/default/index.theme` (Inherits=Adwaita) mirrors the Arch oracle byte-for-byte. No theme name is set, same as upstream. |
 
 ## Arch-only surface: classification
@@ -349,8 +349,12 @@ Verify behaviorally (not just processes):
   "Completed:" lines, `done/first-run-user` exists, `~/.XCompose`
   present.
 
-`checks.omarchy-ux` covers all three automatically. Run it first; do
-manual verification only for areas the test does not cover.
+`checks.omarchy-ux` covers the terminal keypress, first-run evidence, and
+theme files/writability automatically. Its theme rendering runs with
+`OMARCHY_THEME_HEADLESS=1`, so verify live bar/shell color changes in a
+running desktop separately. The VM tests also bypass SDDM and exercise
+package/update operations without a real rebuild; separately verify the
+greeter and the complete update/activation flow after changes to those paths.
 
 ### 4. Commit
 

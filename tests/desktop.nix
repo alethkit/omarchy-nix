@@ -12,7 +12,7 @@
 #     device (wayland-1 socket + uwsm session).
 #   - quickshell launched and registered its config (the bar process is the
 #     single-process Quattro shell launched from default/hypr/autostart.lua).
-#   - xdg-desktop-portal-hyprland connected (full Wayland interface set).
+# Portal connectivity and screen-sharing requests are not asserted here.
 #
 # Known limitations of testing Hyprland in QEMU:
 #   - Hyprland uses Aquamarine (not wlroots), which requires GL. QEMU without

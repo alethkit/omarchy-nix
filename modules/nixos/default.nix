@@ -1261,8 +1261,9 @@ in
       # .wants/ links. Unit bodies come from cfg.package via systemd.packages
       # (block A) — setting wantedBy alone becomes a drop-in, not a rewrite.
       # Skipped: omarchy-speaker-tuning (enabled by omarchy-audio-tuning when
-      # a hardware match exists), omarchy-tailscale-receive (no tailscale in
-      # runtimeDeps; unit is still shipped for consumers who add it).
+      # a hardware match exists). Taildrop is enabled only when the effective
+      # NixOS Tailscale service is enabled; otherwise its long-running receiver
+      # must not start merely because the vendored unit is present.
       (lib.mkIf (cfg.package != null) {
         systemd.user.services = {
           bt-agent.wantedBy = [ "graphical-session.target" ];
@@ -1335,6 +1336,9 @@ in
           # + agent diagnosis). Upstream enables it from
           # install/user/first-run/enable-user-units.sh.
           omarchy-crash-watch.wantedBy = [ "graphical-session.target" ];
+          omarchy-tailscale-receive.wantedBy = lib.mkIf config.services.tailscale.enable [
+            "graphical-session.target"
+          ];
         };
       })
 

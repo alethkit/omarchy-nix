@@ -17,23 +17,29 @@ the desktop you get is the real Omarchy desktop, not a reimplementation.
 
 ## Status
 
-**Feature-complete desktop parity, verified behaviorally.** The port
+**Vendored Omarchy desktop with automated behavioral coverage.** The port
 reproduces the real Omarchy desktop: Hyprland session via uwsm,
 quickshell bar/menus, Super+Enter terminal, theme switching with live
 colors (not just wallpaper), editable user configs, first-run hooks, the
 full upstream package set (including the 13 upstream-owned packages
 absent from nixpkgs, packaged under `pkgs/`), and a NixOS-native
 `omarchy update` flow. Verified in a running session on real Intel GPU
-hardware (2026-07-28), and re-verified on every bump since by the
-automated acceptance suite.
+hardware (2026-07-28). The automated acceptance suite checks the subset
+described below on subsequent changes.
 
 Automated NixOS tests run under `nix flake check`:
 `checks.omarchy-desktop` (stack comes up), `checks.omarchy-ux`
-(behavioral acceptance: Super+Enter opens foot, theme switching, config
-editability, and binary coverage of every menu action and `when:` guard,
+(behavioral acceptance: Super+Enter opens foot, headless theme rendering,
+config editability, and command coverage of menu actions and `when:`/`disabled:` guards,
 autostart, and systemd command — `bash -c` interiors and QML exec sites
 are guarded by count tripwires), and `checks.omarchy-fish` (vendor
 profile parity).
+
+The VM tests start the session from tty1 with SDDM disabled. Theme checks
+use headless rendering, and package/update checks skip the real system
+rebuild. These tests do not establish live bar/shell color changes, the
+SDDM login flow, or a complete update followed by activation. Those paths
+still need separate desktop verification after relevant changes.
 
 > Upstream's Quattro line is at `v4.0.2` (2026-09); this port tracks the
 > `quattro` branch (release + post-release fixes). The vendored `version`
@@ -69,7 +75,7 @@ module/build verification.
 - **2026-07-28** — behavioral-parity milestone: the full desktop verified
   on real hardware; the VM acceptance suite (`checks.omarchy-ux`) green.
 
-Per-bump detail and full history: [`docs/MAINTAINERS.md`](docs/MAINTAINERS.md).
+Upstream adaptation details and the bump checklist: [`docs/UPSTREAM.md`](docs/UPSTREAM.md).
 
 ## Design rule
 
@@ -323,8 +329,8 @@ modules/home-manager/  # HM module: per-user config seeds (mutable)
 skills/omarchy/        # NixOS-native end-user agent skill (packaged + linked by HM)
 tests/                 # desktop.nix (stack) + ux.nix (behavioral) + fish.nix
 example/               # demo consumer flake
-docs/                  # MAINTAINERS.md (changelog hub), install.md, options.md,
-                       # UPSTREAM.md, vm.md, nix-best-practices.md
+docs/                  # install.md, options.md, UPSTREAM.md, vm.md,
+                       # nix-best-practices.md
 ```
 
 ## Updating upstream

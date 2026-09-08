@@ -292,6 +292,17 @@
     with machine.nested("waiting for default-web-browser to become chromium.desktop"):
         retry(browser_is_chromium, timeout_seconds=120)
 
+    # Home Manager initializes the browser association only when it is absent.
+    # A user's explicit choice must survive a later activation, while the
+    # upstream first-run path still establishes Chromium on a fresh home.
+    machine.succeed(
+        as_demo("env -u BROWSER xdg-settings set default-web-browser firefox.desktop")
+    )
+    assert machine.succeed(as_demo("xdg-settings get default-web-browser")).strip() == "firefox.desktop"
+    machine.succeed("systemctl restart home-manager-demo.service")
+    assert machine.succeed(as_demo("xdg-settings get default-web-browser")).strip() == "firefox.desktop", \
+        "Home Manager activation reset the user's Firefox browser association"
+
     # --- (4) Cursor mechanism (mechanism parity, not screenshot). ----------
     # Upstream sets no cursor theme name; libxcursor resolves the theme named
     # "default" via icons/default/index.theme -> Inherits=Adwaita. adwaita-icon-
@@ -712,7 +723,7 @@
     # Upstream finalize-user links each agent to $OMARCHY_PATH once. Because
     # that is a generation-specific store path on NixOS, Home Manager must
     # adopt and refresh the links on every activation. Simulate an old
-    # generation by redirecting all four links to a stale directory, delete
+    # generation by redirecting all six links to a stale directory, delete
     # that directory (as GC would), rerun the HM activation unit, and require
     # the links to point at the active package target again.
     with machine.nested("NixOS agent skill links survive package updates"):
@@ -721,6 +732,8 @@
             ".claude/skills/omarchy",
             ".codex/skills/omarchy",
             ".pi/agent/skills/omarchy",
+            ".gemini/config/skills/omarchy",
+            ".hermes/skills/omarchy",
         ]
         expected = machine.succeed(
             as_demo("readlink -f \"$OMARCHY_PATH/default/agents/skills/omarchy\"")
@@ -744,7 +757,7 @@
             )
 
         # Simulate garbage collection of the old generation: the stale target
-        # disappears, leaving all four links dangling (test -e follows symlinks).
+        # disappears, leaving all six links dangling (test -e follows symlinks).
         machine.succeed("rm -rf /tmp/stale-omarchy-skill")
         for skill_path in skill_paths:
             machine.succeed("test ! -e /home/demo/" + skill_path)
@@ -1126,6 +1139,23 @@
             word = s.split()[0].strip("'\"")
             if word.startswith("omarchy-"):
                 candidates.add(word)
+
+        # `disabled:` guards run the same shell probes, but were previously
+        # omitted from coverage. Parse them too so optional integrations such
+        # as Flatpak and every package-presence probe remain an explicit review
+        # point when upstream changes the menu.
+        disableds = re.findall(r'"disabled"\s*:\s*"((?:\\.|[^"\\])*)"', menu)
+        assert len(disableds) >= 50, (
+            "menu disabled-guard extraction yielded only %d entries (need >= 50; "
+            "file/schema moved?)" % len(disableds)
+        )
+        for disabled in disableds:
+            # This specific availability probe may fail when the optional
+            # Flatpak integration is absent. Do not allowlist flatpak globally:
+            # a new action that requires it must still fail coverage.
+            if disabled == "flatpak info com.nvidia.geforcenow":
+                continue
+            candidates |= extract_commands(disabled)
 
         # (b) Autostart.lua — hl.exec_cmd("...") and o.launch("...") strings.
         auto = machine.succeed(

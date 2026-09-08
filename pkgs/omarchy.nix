@@ -1642,10 +1642,11 @@ stdenv.mkDerivation (finalAttrs: {
 
     # omarchy-nix-pkglib: shared transaction machinery for omarchy-nix-add /
     # omarchy-nix-remove. Sourced by both scripts; deliberately NOT
-    # executable (it is a library). Provides: per-JSON flock serialization
-    # (held through read -> write -> rebuild -> rollback), schema validation,
-    # batch mutation, unique-temp + atomic rename, hash-checked rollback, and
-    # a durable per-operation audit log under $XDG_STATE_HOME/omarchy/nix-add.
+    # executable (it is a library). Provides: per-flake-directory flock
+    # serialization (held through read -> write -> rebuild -> rollback), schema
+    # validation, batch mutation, unique-temp + atomic rename, hash-checked
+    # rollback, and a durable per-operation audit log under
+    # $XDG_STATE_HOME/omarchy/nix-add.
     cat >"$dest/bin/omarchy-nix-pkglib" <<'EOF'
     # omarchy-nix transaction library — source, do not execute.
 
@@ -1747,21 +1748,23 @@ stdenv.mkDerivation (finalAttrs: {
       printf '%s\n' "$d"
     }
 
-    # txn_begin <command-name> <ids...> — resolve flake, open the per-operation
-    # audit log, and take the flock for this JSON. The lock lives in the state
-    # dir (always user-writable, so it also covers root-owned flakes) and is
-    # keyed by the JSON path; it is held until process exit, which serializes
-    # ALL add/remove operations — including their rebuilds.
+    # txn_begin <command-name> <ids...> — resolve the flake, open the
+    # per-operation audit log, and take a flock on the canonical flake
+    # directory. Opening the directory read-only is intentional: it works for
+    # root-owned 0555 /etc/nixos-style directories without creating a lock file
+    # or asking sudo for the lock itself. The descriptor stays open until this
+    # process exits, which serializes ALL add/remove operations — including
+    # their rebuilds and rollback.
     txn_begin() {
       local cmd="$1"; shift
       flake_dir=$(resolve_flake_dir_or_die)
       json="$flake_dir/omarchy-packages.json"
-      mkdir -p "$STATE_DIR/locks"
+      mkdir -p "$STATE_DIR"
       op_log="$STATE_DIR/$(date +%Y%m%d-%H%M%S)-$$.log"
-      local key
-      key=$(printf '%s' "$json" | sha256sum | cut -d' ' -f1)
-      exec 9>"$STATE_DIR/locks/$key.lock"
-      flock -w 600 9 || die "Another install/remove operation has held the lock for 10 minutes. Check for a stuck omarchy-nix-add/remove process (do NOT remove the lock file — a live holder would keep the old lock while new operations take a fresh one). Nothing was changed."
+      exec 9<"$flake_dir" ||
+        die "Cannot open the consumer flake directory for a read-only transaction lock: $flake_dir. The directory must be readable and searchable. Nothing was changed."
+      flock -w 600 9 ||
+        die "Another install/remove operation has held the consumer flake lock for 10 minutes. Check for a stuck omarchy-nix-add/remove process. Nothing was changed."
       {
         echo "command: $cmd"
         echo "ids: $*"
@@ -1936,9 +1939,13 @@ stdenv.mkDerivation (finalAttrs: {
     done
 
     # Refresh the package-search index in the background for omarchy-nix-search.
-    # 9>&- closes the inherited lock fd — otherwise the (minutes-long) index
-    # build would keep the transaction lock held after this script exits.
-    (omarchy-nix-search --refresh >/dev/null 2>&1 9>&- &)
+    # Close the inherited lock fd before starting it — otherwise the
+    # (minutes-long) index build would keep the transaction lock held after
+    # this script exits.
+    (
+      exec 9>&-
+      omarchy-nix-search --refresh >/dev/null 2>&1 &
+    )
 
     log "Done — $* installed."
     EOF
